@@ -3,7 +3,7 @@ import inspect
 import lzma
 from collections import OrderedDict
 from dataclasses import dataclass
-from mmap import mmap, ACCESS_READ
+from mmap import ACCESS_READ, mmap
 from pathlib import Path
 from typing import Callable, Optional
 

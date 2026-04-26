@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from malstore import Type, identify, identify_path, type_names
+from badlib import Type, identify, identify_path, type_names
 
 
 def test_identify_bytes() -> None:

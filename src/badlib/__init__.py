@@ -1,13 +1,13 @@
 """Malware sample storage helpers."""
 
-from malstore.badd_obj import (
+from badlib.badd_obj import (
     CompressObj,
     CompressReader,
     CompressWriter,
     is_badd_obj,
     is_trans_obj,
 )
-from malstore.quickid import (
+from badlib.quickid import (
     COMMONTYPE,
     OOXML_CONTENT_TYPES,
     QuickID,

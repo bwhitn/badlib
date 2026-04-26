@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-import malstore
+import badlib
 
 
 def test_version_is_defined() -> None:
-    assert malstore.__version__
+    assert badlib.__version__
 
 
 def test_copied_api_is_exported() -> None:
-    assert malstore.CompressReader
-    assert malstore.CompressWriter
-    assert malstore.QuickID
-    assert malstore.Type.ZIP
-    assert malstore.identify
-    assert malstore.identify_path
-    assert malstore.is_trans_obj
-    assert malstore.type_names
+    assert callable(badlib.CompressReader)
+    assert callable(badlib.CompressWriter)
+    assert callable(badlib.QuickID)
+    assert badlib.Type.ZIP
+    assert callable(badlib.identify)
+    assert callable(badlib.identify_path)
+    assert callable(badlib.is_trans_obj)
+    assert callable(badlib.type_names)

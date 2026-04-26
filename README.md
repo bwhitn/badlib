@@ -1,6 +1,6 @@
-# malstore BADLib
+# badlib
 
-`malstore BADLib` is a Python library for malware sample storage workflows.
+`badlib` is a Python library for malware sample storage workflows.
 It is intended to support reading and writing compressed malware files,
 identifying common archive and sample container formats, and preserving useful
 metadata for controlled analysis environments.
@@ -36,15 +36,15 @@ The initial API exposes BADD compressed malware container support and quick file
 type identification.
 
 ```python
-import malstore
+import badlib
 
-print(malstore.__version__)
+print(badlib.__version__)
 ```
 
 Public imports:
 
 ```python
-from malstore import (
+from badlib import (
     COMMONTYPE,
     CompressObj,
     CompressReader,
@@ -69,7 +69,7 @@ the original SHA-256 in the container footer.
 ```python
 from pathlib import Path
 
-from malstore import CompressReader, CompressWriter, is_badd_obj
+from badlib import CompressReader, CompressWriter, is_badd_obj
 
 path = Path("sample.badd")
 data = b"MZ" + (b"example" * 100)
@@ -93,7 +93,7 @@ modes.
 does the same for files on disk using memory-mapped reads.
 
 ```python
-from malstore import Type, identify, identify_path, type_names
+from badlib import Type, identify, identify_path, type_names
 
 file_type = identify(b"PK\x03\x04" + (b"\x00" * 32))
 
@@ -111,8 +111,8 @@ against an object with `_filetype` and optional `_path` attributes.
 The initial compression and identification implementation was copied from the
 local `malarchive` checkout:
 
-- `malanalysis/base/badd_obj.py` -> `src/malstore/badd_obj.py`
-- `malanalysis/base/quickid.py` -> `src/malstore/quickid.py`
+- `malanalysis/base/badd_obj.py` -> `src/badlib/badd_obj.py`
+- `malanalysis/base/quickid.py` -> `src/badlib/quickid.py`
 
 The copied code provides the current BADD read/write format and signature-based
 file type detection. Before publishing this repo as MIT, confirm that the

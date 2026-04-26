@@ -3,7 +3,7 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "malstore-badlib"
+name = "badlib"
 version = "0.1.0"
 description = "Python library for malware sample storage and compressed sample identification."
 readme = "README.md"
@@ -46,7 +46,7 @@ Homepage = "https://github.com/bwhitn/badlib"
 Issues = "https://github.com/bwhitn/badlib/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/malstore"]
+packages = ["src/badlib"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -58,7 +58,18 @@ target-version = "py310"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.lint.per-file-ignores]
+"src/badlib/badd_obj.py" = ["E501", "UP035", "UP045"]
+"src/badlib/quickid.py" = ["E501", "F841", "UP006", "UP035"]
+
 [tool.mypy]
 python_version = "3.10"
 strict = true
-packages = ["malstore"]
+packages = ["badlib"]
+
+[[tool.mypy.overrides]]
+module = [
+    "badlib.badd_obj",
+    "badlib.quickid",
+]
+ignore_errors = true
