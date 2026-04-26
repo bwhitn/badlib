@@ -1,0 +1,54 @@
+# Bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+site/
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# IDE/editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local malware/sample storage
+samples/
+malware/
+quarantine/
+*.7z
+*.zip
+*.rar
+*.tar
+*.tar.gz
+*.tgz

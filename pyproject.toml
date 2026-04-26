@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "malstore-badlib"
+version = "0.1.0"
+description = "Python library for malware sample storage and compressed sample identification."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "BADLib contributors" }
+]
+keywords = [
+    "malware",
+    "archive",
+    "compression",
+    "storage",
+    "forensics",
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: System :: Archiving",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[project.urls]
+Homepage = "https://github.com/bwhitn/badlib"
+Issues = "https://github.com/bwhitn/badlib/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/malstore"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+packages = ["malstore"]
