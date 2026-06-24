@@ -613,7 +613,7 @@ MAGIC_NUM = [
         b'<?xm': (0, "_php_or_xml"),
         b'7z\xbc\xaf': (0, "_sevenzip"),
         b'\xfd7zX': (0, "_xz"),
-        b'begin': (0, "_uue"),
+        b'begi': (0, "_uue"),
         b'GIF8': (0, "_gif"),
         b'0707': (0, "_cpio"),
     }),
