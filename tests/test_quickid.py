@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pickle
 from pathlib import Path
 
 from badlib import Type, identify, identify_path, type_names
@@ -34,3 +35,15 @@ def test_identify_svg_xml_declaration() -> None:
 
     assert result & Type.SVG
     assert not result & Type.XML
+
+
+def test_identify_binary_pickle_protocols() -> None:
+    for protocol in range(2, pickle.HIGHEST_PROTOCOL + 1):
+        result = identify(pickle.dumps({"payload": protocol}, protocol=protocol))
+
+        assert result & Type.PICKLE
+        assert "Python Pickle" in type_names(result)
+
+
+def test_identify_text_pickle_protocol_without_magic_as_unknown() -> None:
+    assert identify(pickle.dumps({"payload": 0}, protocol=0)) == Type.UNK

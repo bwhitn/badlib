@@ -180,6 +180,7 @@ class Type(IntFlag):
     U32LEBOM = auto()  # UTF-32 LE BOM text
     U32BEBOM = auto()  # UTF-32 BE BOM text
     SVG = auto()  # Scalable Vector Graphics
+    PICKLE = auto()  # Python pickle serialization
 
 
 COMMONTYPE = {
@@ -272,6 +273,7 @@ COMMONTYPE = {
     Type.PEMC: "PEM Certificate",
     Type.XML: "XML Document",
     Type.SVG: "Scalable Vector Graphics",
+    Type.PICKLE: "Python Pickle",
     Type.BPLS: "Binary Property List",
     Type.IURL: "Internet Shortcut",
     Type.DAA: "PowerISO DAA Disk Image",
@@ -560,7 +562,11 @@ MAGIC_NUM = [
         b'#!': (Type.SH, None),
         b'BZ': (0, "_bzh_or_id3"),
         b'ID': (0, "_bzh_or_id3"),
-        b'<%': (0, "_jsp_or_asp")
+        b'<%': (0, "_jsp_or_asp"),
+        b'\x80\x02': (0, "_pickle"),
+        b'\x80\x03': (0, "_pickle"),
+        b'\x80\x04': (0, "_pickle"),
+        b'\x80\x05': (0, "_pickle"),
     }),
     ((0, 4), {
         b'\x00\x00\x01\x00': (0, "_ico"),
@@ -1100,6 +1106,10 @@ class QuickID:
             if val is not None:
                 obj._filetype |= val
 
+        def _pickle():
+            if _data_size() >= 3 and data[0] == 0x80 and 2 <= data[1] <= 5:
+                obj._filetype |= Type.PICKLE
+
         obj._filetype = 0
 
         func_map = {
@@ -1131,7 +1141,8 @@ class QuickID:
             "_cpio": _cpio,
             "_ar": _ar,
             "_dmg": _dmg,
-            "_au3": _au3
+            "_au3": _au3,
+            "_pickle": _pickle,
         }
 
         for offset, dict_maches in MAGIC_NUM:
