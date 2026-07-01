@@ -181,6 +181,13 @@ class Type(IntFlag):
     U32BEBOM = auto()  # UTF-32 BE BOM text
     SVG = auto()  # Scalable Vector Graphics
     PICKLE = auto()  # Python pickle serialization
+    TNEF = auto()  # Transport Neutral Encapsulation Format
+    LZMA = auto()  # LZMA-alone compressed data
+    LZ4 = auto()  # LZ4 compressed data
+    EML = auto()  # RFC 5322 email message
+    IQY = auto()  # Microsoft Internet Query
+    LIBRARYMS = auto()  # Windows Library Description
+    A3X = auto()  # AutoIt compiled script
 
 
 COMMONTYPE = {
@@ -274,6 +281,13 @@ COMMONTYPE = {
     Type.XML: "XML Document",
     Type.SVG: "Scalable Vector Graphics",
     Type.PICKLE: "Python Pickle",
+    Type.TNEF: "Transport Neutral Encapsulation Format",
+    Type.LZMA: "LZMA Compressed",
+    Type.LZ4: "LZ4 Compressed",
+    Type.EML: "Email Message",
+    Type.IQY: "Microsoft Internet Query",
+    Type.LIBRARYMS: "Windows Library Description",
+    Type.A3X: "AutoIt Compiled Script",
     Type.BPLS: "Binary Property List",
     Type.IURL: "Internet Shortcut",
     Type.DAA: "PowerISO DAA Disk Image",
@@ -582,6 +596,10 @@ MAGIC_NUM = [
         b'\x01\x05\x00\x00': (0, "_ole1_embedded"),
         b'{\\rt': (Type.RTF, "_rtf_markers"),
         b'\x3f\x5f\x03\x00': (Type.HLP, None),
+        b'\x78\x9f\x3e\x22': (Type.TNEF, None),
+        b'\x04\x22\x4d\x18': (0, "_lz4"),
+        b'\x02\x21\x4c\x18': (0, "_lz4"),
+        b'\x5d\x00\x00\x80': (0, "_lzma"),
         b'PK\x03\x04': (Type.ZIP, "_zip"),
         b'Rar!': (Type.RAR, None),
         b'\x7fELF': (Type.ELF, "_elf"),
@@ -594,14 +612,14 @@ MAGIC_NUM = [
         b'\xca\xfe\xba\xbe': (0, "_cafebabe"),
         b'MSCF': (Type.CAB, None),
         b'#@~^': (Type.MSES, None),
-        b'\x00asm': (Type.WASM, None),
+        b'\x00asm': (0, "_wasm"),
         b'\x28\xb5\x2f\xfd': (Type.ZST, None),
         b'\x03\x00\x08\x00': (Type.BXML, None),
         b'\x02\x00\x0c\x00': (Type.ARSC, None),
         b'RIFF': (Type.RIFF, None),
         b'\xfe\xed\xfe\xed': (Type.JKS, None),
         b'\xac\xed\x00\x05': (Type.JSER, None),
-        b'\xcb\x0d\x0d\x0a': (Type.PYC, None),
+        b'\xcb\x0d\x0d\x0a': (0, "_pyc"),
         b'\x00\x01\x00\x00': (Type.TTF, None),
         b'OTTO': (Type.TTF, None),
         b'ttcf': (Type.TTF, None),
@@ -1007,7 +1025,49 @@ class QuickID:
             if fifth == 0x70:
                 obj._filetype |= Type.PHP
             elif fifth == 0x6C:
-                obj._filetype |= Type.SVG if _looks_like_svg_markup() else Type.XML
+                if _looks_like_svg_markup():
+                    obj._filetype |= Type.SVG
+                elif _looks_like_libraryms_markup():
+                    obj._filetype |= Type.XML | Type.LIBRARYMS
+                else:
+                    obj._filetype |= Type.XML
+
+        def _decoded_text_prefix(limit: int = 8192) -> str:
+            raw = bytes(data[:min(limit, _data_size())])
+            if raw.startswith(b'\xff\xfe\x00\x00'):
+                return raw[4:].decode("utf-32le", errors="ignore")
+            if raw.startswith(b'\x00\x00\xfe\xff'):
+                return raw[4:].decode("utf-32be", errors="ignore")
+            if raw.startswith(b'\xff\xfe'):
+                return raw[2:].decode("utf-16le", errors="ignore")
+            if raw.startswith(b'\xfe\xff'):
+                return raw[2:].decode("utf-16be", errors="ignore")
+            if raw.startswith(b'\xef\xbb\xbf'):
+                raw = raw[3:]
+            sample = raw[:256]
+            if b'\x00' in sample:
+                even_nulls = sample[0::2].count(0)
+                odd_nulls = sample[1::2].count(0)
+                if odd_nulls > 4 and odd_nulls > even_nulls * 3:
+                    return raw.decode("utf-16le", errors="ignore")
+                if even_nulls > 4 and even_nulls > odd_nulls * 3:
+                    return raw.decode("utf-16be", errors="ignore")
+                return ""
+            return raw.decode("utf-8", errors="ignore")
+
+        def _strip_xml_prefix(text: str) -> str:
+            prefix = text.lstrip()
+            if prefix.lower().startswith("<?xml"):
+                end = prefix.find("?>")
+                if end == -1:
+                    return ""
+                prefix = prefix[end + 2:].lstrip()
+            while prefix.lower().startswith("<!--"):
+                end = prefix.find("-->")
+                if end == -1:
+                    return ""
+                prefix = prefix[end + 3:].lstrip()
+            return prefix
 
         def _looks_like_svg_markup():
             prefix = bytes(data[:4096]).lstrip()
@@ -1035,6 +1095,13 @@ class QuickID:
             if not lowered.startswith(b'<svg'):
                 return False
             return len(lowered) == 4 or lowered[4] in b' \t\r\n>/'
+
+        def _looks_like_libraryms_markup():
+            prefix = _strip_xml_prefix(_decoded_text_prefix(4096))
+            lowered = prefix.lower()
+            if not lowered.startswith("<librarydescription"):
+                return False
+            return len(lowered) == 19 or lowered[19] in " \t\r\n>/"
 
         def _jsp_or_asp():
             if _data_size() < 3:
@@ -1068,6 +1135,56 @@ class QuickID:
         def _xz():
             if _data_size() >= 4 and data[:6] == b'\xfd7zXZ\x00':
                 obj._filetype |= Type.XZ
+
+        def _lzma():
+            if _data_size() < 13:
+                return
+            props = data[0]
+            value = props
+            lc = value % 9
+            value //= 9
+            lp = value % 5
+            pb = value // 5
+            if lc > 8 or lp > 4 or pb > 4:
+                return
+            dict_size = int.from_bytes(data[1:5], "little")
+            if dict_size == 0:
+                return
+            path = str(getattr(obj, "_path", "") or "").lower()
+            if data[:5] == b'\x5d\x00\x00\x80\x00' or path.endswith(".lzma"):
+                obj._filetype |= Type.LZMA
+
+        def _lz4():
+            if _data_size() < 4:
+                return
+            if data[:4] == b'\x02\x21\x4c\x18':
+                obj._filetype |= Type.LZ4
+                return
+            if _data_size() < 7 or data[:4] != b'\x04\x22\x4d\x18':
+                return
+            flags = data[4]
+            version = flags >> 6
+            if version != 1:
+                return
+            obj._filetype |= Type.LZ4
+
+        def _wasm():
+            if _data_size() >= 8 and data[:8] == b'\x00asm\x01\x00\x00\x00':
+                obj._filetype |= Type.WASM
+
+        def _pyc():
+            if _data_size() < 9 or data[2:4] != b'\x0d\x0a':
+                return
+            for offset in (16, 12, 8):
+                if _data_size() <= offset:
+                    continue
+                if offset == 16:
+                    flags = int.from_bytes(data[4:8], "little")
+                    if flags & ~0x03:
+                        continue
+                if data[offset] & 0x7f == ord("c"):
+                    obj._filetype |= Type.PYC
+                    return
 
         def _uue():
             if _data_size() >= 6 and data[:6] == b'begin ':
@@ -1104,11 +1221,55 @@ class QuickID:
         def _au3():
             val = {b'EA05': Type.AU300, b'EA06': Type.AU326}.get(data[20:24], None)
             if val is not None:
-                obj._filetype |= val
+                obj._filetype |= Type.A3X | val
 
         def _pickle():
             if _data_size() >= 3 and data[0] == 0x80 and 2 <= data[1] <= 5:
                 obj._filetype |= Type.PICKLE
+
+        def _eml():
+            text = _decoded_text_prefix(8192)
+            if not text:
+                return
+            normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+            if "\n\n" not in normalized:
+                return
+            header_block = normalized.split("\n\n", 1)[0]
+            lines = header_block.split("\n")
+            if not lines or ":" not in lines[0]:
+                return
+            common_headers = {
+                "from", "to", "cc", "bcc", "subject", "date", "message-id",
+                "mime-version", "content-type", "received", "return-path",
+            }
+            seen = set()
+            for line in lines[:50]:
+                if not line:
+                    break
+                if line[0] in " \t":
+                    continue
+                if ":" not in line:
+                    return
+                name = line.split(":", 1)[0].strip().lower()
+                if name in common_headers:
+                    seen.add(name)
+            path = str(getattr(obj, "_path", "") or "").lower()
+            required = 2 if path.endswith(".eml") else 3
+            anchors = {"from", "received", "message-id", "mime-version", "content-type"}
+            if len(seen) >= required and seen & anchors:
+                obj._filetype |= Type.EML
+
+        def _iqy():
+            text = _decoded_text_prefix(4096)
+            if not text:
+                return
+            lines = [line.strip() for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+            lines = [line for line in lines if line]
+            if len(lines) < 3 or lines[0].upper() != "WEB":
+                return
+            url_prefixes = ("http://", "https://", "ftp://")
+            if any(line.lower().startswith(url_prefixes) for line in lines[1:12]):
+                obj._filetype |= Type.IQY
 
         obj._filetype = 0
 
@@ -1136,6 +1297,10 @@ class QuickID:
             "_lzh": _lzh,
             "_sevenzip": _sevenzip,
             "_xz": _xz,
+            "_lzma": _lzma,
+            "_lz4": _lz4,
+            "_wasm": _wasm,
+            "_pyc": _pyc,
             "_uue": _uue,
             "_gif": _gif,
             "_cpio": _cpio,
@@ -1156,6 +1321,16 @@ class QuickID:
 
         if obj._filetype == 0:
             _ole1_embedded_loose()
+        if obj._filetype == 0:
+            _pyc()
+        if obj._filetype == 0:
+            _lzma()
+        text_marker_types = int(Type.U8BOM | Type.U16LEBOM | Type.U16BEBOM | Type.U32LEBOM | Type.U32BEBOM)
+        if obj._filetype == 0 or (int(obj._filetype) & ~text_marker_types) == 0:
+            _eml()
+            _iqy()
+        if _looks_like_libraryms_markup():
+            obj._filetype |= Type.XML | Type.LIBRARYMS
         if obj._filetype == 0 and _looks_like_svg_markup():
             obj._filetype |= Type.SVG
         if obj._filetype == 0:
