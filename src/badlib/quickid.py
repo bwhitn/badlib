@@ -179,6 +179,7 @@ class Type(IntFlag):
     U16BEBOM = auto()  # UTF-16 BE BOM text
     U32LEBOM = auto()  # UTF-32 LE BOM text
     U32BEBOM = auto()  # UTF-32 BE BOM text
+    SVG = auto()  # Scalable Vector Graphics
 
 
 COMMONTYPE = {
@@ -270,6 +271,7 @@ COMMONTYPE = {
     Type.SAVW: "Saved Webpage",
     Type.PEMC: "PEM Certificate",
     Type.XML: "XML Document",
+    Type.SVG: "Scalable Vector Graphics",
     Type.BPLS: "Binary Property List",
     Type.IURL: "Internet Shortcut",
     Type.DAA: "PowerISO DAA Disk Image",
@@ -611,6 +613,8 @@ MAGIC_NUM = [
         b'<%--': (Type.JSP, None),
         b'<?ph': (0, "_php_or_xml"),
         b'<?xm': (0, "_php_or_xml"),
+        b'<svg': (Type.SVG, None),
+        b'<SVG': (Type.SVG, None),
         b'7z\xbc\xaf': (0, "_sevenzip"),
         b'\xfd7zX': (0, "_xz"),
         b'begi': (0, "_uue"),
@@ -997,7 +1001,34 @@ class QuickID:
             if fifth == 0x70:
                 obj._filetype |= Type.PHP
             elif fifth == 0x6C:
-                obj._filetype |= Type.XML
+                obj._filetype |= Type.SVG if _looks_like_svg_markup() else Type.XML
+
+        def _looks_like_svg_markup():
+            prefix = bytes(data[:4096]).lstrip()
+            if prefix.startswith(b'\xef\xbb\xbf'):
+                prefix = prefix[3:].lstrip()
+            lowered = prefix.lower()
+            if lowered.startswith(b'<?xml'):
+                end = lowered.find(b'?>')
+                if end == -1:
+                    return False
+                prefix = prefix[end + 2:].lstrip()
+                lowered = prefix.lower()
+            while lowered.startswith(b'<!--'):
+                end = lowered.find(b'-->')
+                if end == -1:
+                    return False
+                prefix = prefix[end + 3:].lstrip()
+                lowered = prefix.lower()
+            if lowered.startswith(b'<!doctype'):
+                end = lowered.find(b'>')
+                if end == -1:
+                    return False
+                prefix = prefix[end + 1:].lstrip()
+                lowered = prefix.lower()
+            if not lowered.startswith(b'<svg'):
+                return False
+            return len(lowered) == 4 or lowered[4] in b' \t\r\n>/'
 
         def _jsp_or_asp():
             if _data_size() < 3:
@@ -1114,6 +1145,8 @@ class QuickID:
 
         if obj._filetype == 0:
             _ole1_embedded_loose()
+        if obj._filetype == 0 and _looks_like_svg_markup():
+            obj._filetype |= Type.SVG
         if obj._filetype == 0:
             obj._filetype = Type.UNK
 
