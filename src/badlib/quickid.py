@@ -14,6 +14,10 @@ __all__ = [
     "type_names",
 ]
 
+NSIS_SIGNATURE = b"\xef\xbe\xad\xdeNullsoftInst"
+NSIS_FIRSTHEADER_SIZE = 28
+NSIS_OVERLAY_WIGGLE = 4096
+
 
 @unique
 class Type(IntFlag):
@@ -188,6 +192,7 @@ class Type(IntFlag):
     IQY = auto()  # Microsoft Internet Query
     LIBRARYMS = auto()  # Windows Library Description
     A3X = auto()  # AutoIt compiled script
+    NSIS = auto()  # Nullsoft Scriptable Install System installer
 
 
 COMMONTYPE = {
@@ -288,6 +293,7 @@ COMMONTYPE = {
     Type.IQY: "Microsoft Internet Query",
     Type.LIBRARYMS: "Windows Library Description",
     Type.A3X: "AutoIt Compiled Script",
+    Type.NSIS: "Nullsoft Scriptable Install System Installer",
     Type.BPLS: "Binary Property List",
     Type.IURL: "Internet Shortcut",
     Type.DAA: "PowerISO DAA Disk Image",
@@ -741,6 +747,54 @@ class QuickID:
                         return buffs.index(buffb)
             return -1
 
+        def _pe_section_raw_end(pe_offset: int) -> int:
+            section_count = _unpack_from("<H", pe_offset + 6)[0]
+            optional_header_size = _unpack_from("<H", pe_offset + 20)[0]
+            section_table = pe_offset + 24 + optional_header_size
+            raw_end = 0
+            total = _data_size()
+            for index in range(section_count):
+                section_offset = section_table + (index * 40)
+                if section_offset + 40 > total:
+                    return 0
+                raw_size = _unpack_from("<I", section_offset + 16)[0]
+                raw_offset = _unpack_from("<I", section_offset + 20)[0]
+                if raw_offset == 0 or raw_size == 0:
+                    continue
+                raw_end = max(raw_end, raw_offset + raw_size)
+            return raw_end if 0 < raw_end <= total else 0
+
+        def _nsis(pe_offset: int) -> None:
+            raw_end = _pe_section_raw_end(pe_offset)
+            if raw_end == 0:
+                return
+            total = _data_size()
+            search_start = raw_end
+            search_stop = min(total, raw_end + NSIS_OVERLAY_WIGGLE + len(NSIS_SIGNATURE) + 4)
+            signature_offset = data.find(NSIS_SIGNATURE, search_start, search_stop)
+            if signature_offset < 0:
+                return
+            firstheader_offset = signature_offset - 4
+            if firstheader_offset < raw_end or firstheader_offset > raw_end + NSIS_OVERLAY_WIGGLE:
+                return
+            if firstheader_offset + NSIS_FIRSTHEADER_SIZE > total:
+                return
+            flags, siginfo, nsinst0, nsinst1, nsinst2, header_len, all_data_len = _unpack_from(
+                "<7I",
+                firstheader_offset,
+            )
+            del flags
+            if siginfo != 0xDEADBEEF:
+                return
+            if (nsinst0, nsinst1, nsinst2) != (0x6C6C754E, 0x74666F73, 0x74736E49):
+                return
+            if header_len == 0 or all_data_len < header_len:
+                return
+            archive_end = firstheader_offset + NSIS_FIRSTHEADER_SIZE + all_data_len
+            if archive_end > total:
+                return
+            obj._filetype |= Type.NSIS
+
         def _pe():
             pe_offset = _unpack_from("<I", 0x3C)[0]
             if data[pe_offset: pe_offset + 4] == b"PE\0\0":
@@ -752,6 +806,7 @@ class QuickID:
                     clr_rva, clr_size = _unpack_from("<II", clr_rt_hdr_offset)
                     if not (clr_rva == 0 or clr_size == 0):
                         obj._filetype |= Type.DOTNET
+                    _nsis(pe_offset)
 
         def _elf():
             endian_flag = data[5]

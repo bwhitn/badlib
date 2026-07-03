@@ -7,6 +7,36 @@ from pathlib import Path
 
 from badlib import Type, identify, identify_path, type_names
 
+NSIS_FIRSTHEADER = (
+    b"\x00\x00\x00\x00"
+    b"\xef\xbe\xad\xde"
+    b"NullsoftInst"
+    b"\x04\x00\x00\x00"
+    b"\x04\x00\x00\x00"
+    b"DATA"
+)
+
+
+def _minimal_pe(*, section_payload: bytes = b"", overlay: bytes = b"") -> bytes:
+    pe_offset = 0x80
+    optional_header_size = 0xE0
+    section_table = pe_offset + 24 + optional_header_size
+    raw_offset = 0x200
+    raw_size = 0x200
+    data = bytearray(raw_offset + raw_size)
+    data[0:2] = b"MZ"
+    data[0x3C:0x40] = pe_offset.to_bytes(4, "little")
+    data[pe_offset:pe_offset + 4] = b"PE\x00\x00"
+    data[pe_offset + 4:pe_offset + 6] = (0x14C).to_bytes(2, "little")
+    data[pe_offset + 6:pe_offset + 8] = (1).to_bytes(2, "little")
+    data[pe_offset + 20:pe_offset + 22] = optional_header_size.to_bytes(2, "little")
+    data[pe_offset + 24:pe_offset + 26] = (0x10B).to_bytes(2, "little")
+    data[section_table:section_table + 8] = b".text\x00\x00\x00"
+    data[section_table + 16:section_table + 20] = raw_size.to_bytes(4, "little")
+    data[section_table + 20:section_table + 24] = raw_offset.to_bytes(4, "little")
+    data[raw_offset:raw_offset + len(section_payload)] = section_payload[:raw_size]
+    return bytes(data) + overlay
+
 
 def test_identify_bytes() -> None:
     result = identify(b"PK\x03\x04" + (b"\x00" * 32))
@@ -139,3 +169,26 @@ def test_identify_autoit_compiled_a3x_marker() -> None:
     assert result & Type.A3X
     assert result & Type.AU326
     assert "AutoIt Compiled Script" in type_names(result)
+
+
+def test_identify_nsis_pe_overlay_firstheader() -> None:
+    result = identify(_minimal_pe(overlay=(b"\x00" * 64) + NSIS_FIRSTHEADER))
+
+    assert result & Type.PE32
+    assert result & Type.X86
+    assert result & Type.NSIS
+    assert "Nullsoft Scriptable Install System Installer" in type_names(result)
+
+
+def test_identify_nsis_signature_inside_pe_section_is_ignored() -> None:
+    result = identify(_minimal_pe(section_payload=NSIS_FIRSTHEADER))
+
+    assert result & Type.PE32
+    assert not result & Type.NSIS
+
+
+def test_identify_nsis_signature_too_far_from_overlay_is_ignored() -> None:
+    result = identify(_minimal_pe(overlay=(b"\x00" * 4097) + NSIS_FIRSTHEADER))
+
+    assert result & Type.PE32
+    assert not result & Type.NSIS
