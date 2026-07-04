@@ -180,6 +180,25 @@ def test_identify_nsis_pe_overlay_firstheader() -> None:
     assert "Nullsoft Scriptable Install System Installer" in type_names(result)
 
 
+def test_identify_nsis_all_data_len_includes_firstheader() -> None:
+    header_len = 4
+    payload = b"DATA"
+    all_data_len = 28 + len(payload)
+    firstheader = (
+        b"\x00\x00\x00\x00"
+        b"\xef\xbe\xad\xde"
+        b"NullsoftInst"
+        + header_len.to_bytes(4, "little")
+        + all_data_len.to_bytes(4, "little")
+        + payload
+    )
+    result = identify(_minimal_pe(overlay=firstheader))
+
+    assert result & Type.PE32
+    assert result & Type.X86
+    assert result & Type.NSIS
+
+
 def test_identify_nsis_signature_inside_pe_section_is_ignored() -> None:
     result = identify(_minimal_pe(section_payload=NSIS_FIRSTHEADER))
 

@@ -790,8 +790,14 @@ class QuickID:
                 return
             if header_len == 0 or all_data_len < header_len:
                 return
-            archive_end = firstheader_offset + NSIS_FIRSTHEADER_SIZE + all_data_len
-            if archive_end > total:
+            archive_end = firstheader_offset + all_data_len
+            legacy_archive_end = firstheader_offset + NSIS_FIRSTHEADER_SIZE + all_data_len
+            archive_len_includes_firstheader = (
+                all_data_len >= NSIS_FIRSTHEADER_SIZE + header_len
+                and archive_end <= total
+            )
+            archive_len_excludes_firstheader = legacy_archive_end <= total
+            if not archive_len_includes_firstheader and not archive_len_excludes_firstheader:
                 return
             obj._filetype |= Type.NSIS
 
