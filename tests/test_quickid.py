@@ -12,7 +12,7 @@ NSIS_FIRSTHEADER = (
     b"\xef\xbe\xad\xde"
     b"NullsoftInst"
     b"\x04\x00\x00\x00"
-    b"\x04\x00\x00\x00"
+    b"\x20\x00\x00\x00"
     b"DATA"
 )
 
@@ -172,7 +172,7 @@ def test_identify_autoit_compiled_a3x_marker() -> None:
 
 
 def test_identify_nsis_pe_overlay_firstheader() -> None:
-    result = identify(_minimal_pe(overlay=(b"\x00" * 64) + NSIS_FIRSTHEADER))
+    result = identify(_minimal_pe(overlay=NSIS_FIRSTHEADER))
 
     assert result & Type.PE32
     assert result & Type.X86
@@ -206,8 +206,15 @@ def test_identify_nsis_signature_inside_pe_section_is_ignored() -> None:
     assert not result & Type.NSIS
 
 
-def test_identify_nsis_signature_too_far_from_overlay_is_ignored() -> None:
-    result = identify(_minimal_pe(overlay=(b"\x00" * 4097) + NSIS_FIRSTHEADER))
+def test_identify_nsis_unaligned_firstheader_is_ignored() -> None:
+    result = identify(_minimal_pe(overlay=(b"\x00" * 64) + NSIS_FIRSTHEADER))
 
     assert result & Type.PE32
     assert not result & Type.NSIS
+
+
+def test_identify_nsis_aligned_firstheader_beyond_legacy_wiggle() -> None:
+    result = identify(_minimal_pe(overlay=(b"\x00" * 4608) + NSIS_FIRSTHEADER))
+
+    assert result & Type.PE32
+    assert result & Type.NSIS

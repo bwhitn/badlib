@@ -16,7 +16,8 @@ __all__ = [
 
 NSIS_SIGNATURE = b"\xef\xbe\xad\xdeNullsoftInst"
 NSIS_FIRSTHEADER_SIZE = 28
-NSIS_OVERLAY_WIGGLE = 4096
+NSIS_FLAGS_MASK = 0xF
+NSIS_SCAN_ALIGNMENT = 512
 
 
 @unique
@@ -764,42 +765,36 @@ class QuickID:
                 raw_end = max(raw_end, raw_offset + raw_size)
             return raw_end if 0 < raw_end <= total else 0
 
+        def _nsis_candidate(firstheader_offset: int) -> bool:
+            total = _data_size()
+            if firstheader_offset + NSIS_FIRSTHEADER_SIZE > total:
+                return False
+            flags, siginfo, nsinst0, nsinst1, nsinst2, header_len, archive_size = _unpack_from(
+                "<7I",
+                firstheader_offset,
+            )
+            if flags & ~NSIS_FLAGS_MASK:
+                return False
+            if siginfo != 0xDEADBEEF:
+                return False
+            if (nsinst0, nsinst1, nsinst2) != (0x6C6C754E, 0x74666F73, 0x74736E49):
+                return False
+            if header_len == 0:
+                return False
+            if archive_size <= NSIS_FIRSTHEADER_SIZE:
+                return False
+            return firstheader_offset + archive_size <= total
+
         def _nsis(pe_offset: int) -> None:
             raw_end = _pe_section_raw_end(pe_offset)
             if raw_end == 0:
                 return
             total = _data_size()
-            search_start = raw_end
-            search_stop = min(total, raw_end + NSIS_OVERLAY_WIGGLE + len(NSIS_SIGNATURE) + 4)
-            signature_offset = data.find(NSIS_SIGNATURE, search_start, search_stop)
-            if signature_offset < 0:
-                return
-            firstheader_offset = signature_offset - 4
-            if firstheader_offset < raw_end or firstheader_offset > raw_end + NSIS_OVERLAY_WIGGLE:
-                return
-            if firstheader_offset + NSIS_FIRSTHEADER_SIZE > total:
-                return
-            flags, siginfo, nsinst0, nsinst1, nsinst2, header_len, all_data_len = _unpack_from(
-                "<7I",
-                firstheader_offset,
-            )
-            del flags
-            if siginfo != 0xDEADBEEF:
-                return
-            if (nsinst0, nsinst1, nsinst2) != (0x6C6C754E, 0x74666F73, 0x74736E49):
-                return
-            if header_len == 0 or all_data_len < header_len:
-                return
-            archive_end = firstheader_offset + all_data_len
-            legacy_archive_end = firstheader_offset + NSIS_FIRSTHEADER_SIZE + all_data_len
-            archive_len_includes_firstheader = (
-                all_data_len >= NSIS_FIRSTHEADER_SIZE + header_len
-                and archive_end <= total
-            )
-            archive_len_excludes_firstheader = legacy_archive_end <= total
-            if not archive_len_includes_firstheader and not archive_len_excludes_firstheader:
-                return
-            obj._filetype |= Type.NSIS
+            search_start = ((raw_end + NSIS_SCAN_ALIGNMENT - 1) // NSIS_SCAN_ALIGNMENT) * NSIS_SCAN_ALIGNMENT
+            for firstheader_offset in range(search_start, total - NSIS_FIRSTHEADER_SIZE + 1, NSIS_SCAN_ALIGNMENT):
+                if _nsis_candidate(firstheader_offset):
+                    obj._filetype |= Type.NSIS
+                    return
 
         def _pe():
             pe_offset = _unpack_from("<I", 0x3C)[0]
