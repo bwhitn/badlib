@@ -194,6 +194,8 @@ class Type(IntFlag):
     LIBRARYMS = auto()  # Windows Library Description
     A3X = auto()  # AutoIt compiled script
     NSIS = auto()  # Nullsoft Scriptable Install System installer
+    WASM32 = auto()  # WebAssembly with 32-bit linear memory
+    WASM64 = auto()  # WebAssembly with 64-bit linear memory
 
 
 COMMONTYPE = {
@@ -295,6 +297,8 @@ COMMONTYPE = {
     Type.LIBRARYMS: "Windows Library Description",
     Type.A3X: "AutoIt Compiled Script",
     Type.NSIS: "Nullsoft Scriptable Install System Installer",
+    Type.WASM32: "WebAssembly 32-bit Memory",
+    Type.WASM64: "WebAssembly 64-bit Memory",
     Type.BPLS: "Binary Property List",
     Type.IURL: "Internet Shortcut",
     Type.DAA: "PowerISO DAA Disk Image",
@@ -376,6 +380,7 @@ OOXML_CONTENT_TYPES = {
     "application/vnd.ms-appx.blockmap+xml",
     "application/vnd.ms-appx.manifest+xml",
     "application/vnd.ms-appx.signature",
+    "application/vnd.ms-excel.addin.macroEnabled.12",
     "application/vnd.ms-excel.binIndexMs",
     "application/vnd.ms-excel.binIndexWs",
     "application/vnd.ms-excel.calcChain",
@@ -386,6 +391,7 @@ OOXML_CONTENT_TYPES = {
     "application/vnd.ms-excel.sheet.binary.macroEnabled.main",
     "application/vnd.ms-excel.sheet.macroEnabled.12",
     "application/vnd.ms-excel.styles",
+    "application/vnd.ms-excel.template.macroEnabled.12",
     "application/vnd.ms-excel.threadedcomments+xml",
     "application/vnd.ms-excel.worksheet",
     "application/vnd.ms-office.DrsConnector+xml",
@@ -402,10 +408,15 @@ OOXML_CONTENT_TYPES = {
     "application/vnd.ms-office.vbaProjectSignature",
     "application/vnd.ms-office.vbaProjectSignatureAgile",
     "application/vnd.ms-pkiseccat",
+    "application/vnd.ms-powerpoint.addin.macroEnabled.12",
+    "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
     "application/vnd.ms-powerpoint.revisioninfo+xml",
+    "application/vnd.ms-powerpoint.slideshow.macroEnabled.12",
+    "application/vnd.ms-powerpoint.template.macroEnabled.12",
     "application/vnd.ms-word.document.macroEnabled.12",
     "application/vnd.ms-word.keyMapCustomizations+xml",
     "application/vnd.ms-word.stylesWithEffects+xml",
+    "application/vnd.ms-word.template.macroEnabled.12",
     "application/vnd.ms-word.vbaData+xml",
     "application/vnd.openxmlformats-officedocument.custom-properties+xml",
     "application/vnd.openxmlformats-officedocument.customXmlProperties+xml",
@@ -418,12 +429,18 @@ OOXML_CONTENT_TYPES = {
     "application/vnd.openxmlformats-officedocument.drawingml.diagramStyle+xml",
     "application/vnd.openxmlformats-officedocument.extended-properties+xml",
     "application/vnd.openxmlformats-officedocument.oleObject",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     "application/vnd.openxmlformats-officedocument.presentationml.presProps+xml",
     "application/vnd.openxmlformats-officedocument.presentationml.slide+xml",
+    "application/vnd.openxmlformats-officedocument.presentationml.slide",
     "application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml",
+    "application/vnd.openxmlformats-officedocument.presentationml.slideLayout",
     "application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml",
+    "application/vnd.openxmlformats-officedocument.presentationml.slideMaster",
+    "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
     "application/vnd.openxmlformats-officedocument.presentationml.tableStyles+xml",
     "application/vnd.openxmlformats-officedocument.presentationml.tags+xml",
+    "application/vnd.openxmlformats-officedocument.presentationml.template",
     "application/vnd.openxmlformats-officedocument.presentationml.viewProps+xml",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml",
@@ -432,11 +449,13 @@ OOXML_CONTENT_TYPES = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.template",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml",
     "application/vnd.openxmlformats-officedocument.theme+xml",
     "application/vnd.openxmlformats-officedocument.themeManager+xml",
     "application/vnd.openxmlformats-officedocument.themeOverride+xml",
     "application/vnd.openxmlformats-officedocument.vmlDrawing",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document.glossary+xml",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml",
@@ -447,6 +466,7 @@ OOXML_CONTENT_TYPES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.people+xml",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.webSettings+xml",
     "application/vnd.openxmlformats-package.core-properties+xml",
     "application/vnd.openxmlformats-package.relationships+xml",
@@ -503,12 +523,18 @@ OOXML_CONTENT_MAP = {
     "application/vnd.ms-word.document.macroEnabled.12": Type.DOCM,
     "application/vnd.ms-word.keyMapCustomizations+xml": Type.DOCX,
     "application/vnd.ms-word.stylesWithEffects+xml": Type.DOCX,
+    "application/vnd.ms-word.template.macroEnabled.12": Type.DOTM,
     "application/vnd.ms-word.vbaData+xml": Type.DOCM,
     "application/vnd.ms-excel.sheet.macroEnabled.12": Type.XLSM,
     "application/vnd.ms-excel.sheet.binary.macroEnabled.main": Type.XLSM,
+    "application/vnd.ms-excel.template.macroEnabled.12": Type.XLTM,
     "application/vnd.ms-excel.intlmacrosheet": Type.XLSM,
     "application/vnd.ms-excel.macrosheet": Type.XLSM,
     "application/vnd.ms-excel.addin.macroEnabled.12": Type.XLAM,
+    "application/vnd.ms-powerpoint.addin.macroEnabled.12": Type.PPAM,
+    "application/vnd.ms-powerpoint.presentation.macroEnabled.12": Type.PPTM,
+    "application/vnd.ms-powerpoint.slideshow.macroEnabled.12": Type.PPSM,
+    "application/vnd.ms-powerpoint.template.macroEnabled.12": Type.POTM,
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": Type.DOCX,
     "application/vnd.openxmlformats-officedocument.wordprocessingml.template": Type.DOTX,
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": Type.XLSX,
@@ -879,9 +905,12 @@ class QuickID:
                 obj._filetype |= (Type.JAR, Type.WAR)[_find_first(b"PK\x01\x02", 66, [b"WEB-INF/web.xml"]) + 1]
             else:
                 obj._filetype |= result
+            path = getattr(obj, "_path", None)
+            path_lower = str(path or "").lower()
+            if path_lower.endswith((".apkx", ".apks", ".apkm")):
+                obj._filetype |= Type.APKX
             if result != Type.OXML:
                 return
-            path = getattr(obj, "_path", None)
             if not path:
                 return
             try:
@@ -1227,6 +1256,129 @@ class QuickID:
         def _wasm():
             if _data_size() >= 8 and data[:8] == b'\x00asm\x01\x00\x00\x00':
                 obj._filetype |= Type.WASM
+                try:
+                    wasm32, wasm64 = _wasm_memory_address_types()
+                except ValueError:
+                    return
+                if wasm32:
+                    obj._filetype |= Type.WASM32
+                if wasm64:
+                    obj._filetype |= Type.WASM64
+
+        def _read_uleb(offset: int, end: int) -> tuple[int, int]:
+            value = 0
+            shift = 0
+            while offset < end and shift <= 63:
+                byte = data[offset]
+                offset += 1
+                value |= (byte & 0x7f) << shift
+                if byte & 0x80 == 0:
+                    return value, offset
+                shift += 7
+            raise ValueError("Invalid WebAssembly LEB128 integer")
+
+        def _skip_wasm_name(offset: int, end: int) -> int:
+            size, offset = _read_uleb(offset, end)
+            next_offset = offset + size
+            if next_offset > end:
+                raise ValueError("Invalid WebAssembly name")
+            return next_offset
+
+        def _skip_wasm_reftype(offset: int, end: int) -> int:
+            if offset >= end:
+                raise ValueError("Invalid WebAssembly reference type")
+            prefix = data[offset]
+            offset += 1
+            if prefix in (0x63, 0x64):
+                _, offset = _read_uleb(offset, end)
+            return offset
+
+        def _read_wasm_limits(offset: int, end: int) -> tuple[bool, int]:
+            if offset >= end:
+                raise ValueError("Invalid WebAssembly limits")
+            flags = data[offset]
+            offset += 1
+            if flags & ~0x07:
+                raise ValueError("Unsupported WebAssembly limits flags")
+            is_64_bit = bool(flags & 0x04)
+            _, offset = _read_uleb(offset, end)
+            if flags & 0x01:
+                _, offset = _read_uleb(offset, end)
+            return is_64_bit, offset
+
+        def _skip_wasm_table_type(offset: int, end: int) -> int:
+            offset = _skip_wasm_reftype(offset, end)
+            _, offset = _read_wasm_limits(offset, end)
+            return offset
+
+        def _skip_wasm_global_type(offset: int, end: int) -> int:
+            offset = _skip_wasm_reftype(offset, end)
+            if offset >= end:
+                raise ValueError("Invalid WebAssembly global type")
+            return offset + 1
+
+        def _read_wasm_imports(offset: int, end: int) -> tuple[bool, bool]:
+            wasm32 = False
+            wasm64 = False
+            count, offset = _read_uleb(offset, end)
+            for _ in range(count):
+                offset = _skip_wasm_name(offset, end)
+                offset = _skip_wasm_name(offset, end)
+                if offset >= end:
+                    raise ValueError("Invalid WebAssembly import descriptor")
+                kind = data[offset]
+                offset += 1
+                if kind == 0x00:
+                    _, offset = _read_uleb(offset, end)
+                elif kind == 0x01:
+                    offset = _skip_wasm_table_type(offset, end)
+                elif kind == 0x02:
+                    is_64_bit, offset = _read_wasm_limits(offset, end)
+                    wasm64 = wasm64 or is_64_bit
+                    wasm32 = wasm32 or not is_64_bit
+                elif kind == 0x03:
+                    offset = _skip_wasm_global_type(offset, end)
+                elif kind == 0x04:
+                    if offset >= end:
+                        raise ValueError("Invalid WebAssembly tag type")
+                    offset += 1
+                    _, offset = _read_uleb(offset, end)
+                else:
+                    raise ValueError("Invalid WebAssembly import kind")
+            return wasm32, wasm64
+
+        def _read_wasm_memories(offset: int, end: int) -> tuple[bool, bool]:
+            wasm32 = False
+            wasm64 = False
+            count, offset = _read_uleb(offset, end)
+            for _ in range(count):
+                is_64_bit, offset = _read_wasm_limits(offset, end)
+                wasm64 = wasm64 or is_64_bit
+                wasm32 = wasm32 or not is_64_bit
+            return wasm32, wasm64
+
+        def _wasm_memory_address_types() -> tuple[bool, bool]:
+            offset = 8
+            end = _data_size()
+            wasm32 = False
+            wasm64 = False
+            while offset < end:
+                section_id = data[offset]
+                offset += 1
+                section_size, offset = _read_uleb(offset, end)
+                section_end = offset + section_size
+                if section_end > end:
+                    raise ValueError("Invalid WebAssembly section size")
+                if section_id == 2:
+                    section_wasm32, section_wasm64 = _read_wasm_imports(offset, section_end)
+                    wasm32 = wasm32 or section_wasm32
+                    wasm64 = wasm64 or section_wasm64
+                elif section_id == 5:
+                    section_wasm32, section_wasm64 = _read_wasm_memories(offset, section_end)
+                    wasm32 = wasm32 or section_wasm32
+                    wasm64 = wasm64 or section_wasm64
+                offset = section_end
+            return wasm32, wasm64
 
         def _pyc():
             if _data_size() < 9 or data[2:4] != b'\x0d\x0a':
