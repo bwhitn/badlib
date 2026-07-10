@@ -49,13 +49,17 @@ from badlib import (
     CompressObj,
     CompressReader,
     CompressWriter,
+    FORMAT_ALIASES,
+    FORMAT_IDS,
     OOXML_CONTENT_TYPES,
     QuickID,
     Type,
+    format_ids,
     identify,
     identify_path,
     is_badd_obj,
     is_trans_obj,
+    resolve_format_id,
     type_names,
 )
 ```
@@ -105,6 +109,40 @@ disk_type = identify_path("sample.zip")
 
 `QuickID` remains available for lower-level integrations that need to identify
 against an object with `_filetype` and optional `_path` attributes.
+
+### Format IDs and Aliases
+
+`format_ids()` returns canonical lowercase IDs for first-class format flags,
+and `resolve_format_id()` maps aliases to canonical IDs.
+
+Alias mappings:
+
+- `mht` and `mht/mhtml` resolve to `mhtml`.
+- `sfx/peexe`, `peexe-sfx`, and `self-extracting-pe` resolve to `sfx-peexe`.
+
+New high-confidence IDs are based on signatures, package metadata, stream
+names, or stable container markers:
+
+- ZIP/OPC/package subtypes: `xlsb`, `odt`, `ods`, `odc`, `odf`, `odg`, `odi`,
+  `odp`, `msix`, `vsix`, `whl`, `xpi`, `zipx`.
+- CFB/OLE subtypes: `hwp`, `pub`, `doc95`, `dot95`, `xls95`, `ppt95`, `msc`,
+  `mso`.
+- Binary/media/data formats: `h5`, `dwg`, `asf`, `wmv`, `msu`.
+- Structured text formats: `csv`, `ics`, `mbox`, `rdp`, `mhtml`, `sct`.
+
+Heuristic IDs require stronger marker combinations and may depend on bounded
+string windows or path hints:
+
+- Installer and executable subtypes: `actual-installer`, `advanced-installer`,
+  `inno-setup`, `installanywhere`, `installshield`, `wise-installer`, `wix`,
+  `nodejs-pkg`, `sfx-peexe`.
+- Model formats: `tensorflow-pb`, `pytorch-model`.
+
+Parent/container flags remain visible where applicable, such as `zip` + `whl`,
+`zip` + `odt`, `ole` + `hwp`, `cab` + `msu`, `asf` + `wmv`, and `pe32` +
+`inno-setup`. Extension-only detection is avoided except for weak hints such as
+`.zipx`, `.xpi`, `.whl`, and `saved_model.pb`, which still require supporting
+content evidence.
 
 ## Imported Code
 

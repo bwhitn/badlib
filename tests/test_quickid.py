@@ -12,7 +12,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from badlib import OOXML_CONTENT_TYPES, Type, identify, identify_path, type_names
+from badlib import (
+    OOXML_CONTENT_TYPES,
+    Type,
+    format_ids,
+    identify,
+    identify_path,
+    resolve_format_id,
+    type_names,
+)
 from badlib.quickid import OOXML_CONTENT_MAP
 
 OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
@@ -86,6 +94,48 @@ def _zip_with_names(*names: str) -> bytes:
         for name in names:
             archive.writestr(name, b"")
     return payload.getvalue()
+
+
+def _write_zip(
+    path: Path,
+    entries: dict[str, bytes | str],
+    *,
+    compression: int = zipfile.ZIP_STORED,
+) -> Path:
+    with zipfile.ZipFile(path, "w", compression=compression) as archive:
+        for name, content in entries.items():
+            payload = content.encode("utf-8") if isinstance(content, str) else content
+            archive.writestr(name, payload)
+    return path
+
+
+def _write_ooxml_package(
+    tmp_path: Path,
+    suffix: str,
+    content_type: str,
+    extra: dict[str, bytes | str],
+) -> Path:
+    content_types = (
+        "<Types>"
+        f'<Override PartName="/xl/workbook.bin" ContentType="{content_type}"/>'
+        "</Types>"
+    )
+    entries: dict[str, bytes | str] = {
+        "[Content_Types].xml": content_types,
+        "_rels/.rels": "",
+    }
+    entries.update(extra)
+    return _write_zip(tmp_path / f"sample{suffix}", entries)
+
+
+def _write_odf_package(tmp_path: Path, suffix: str, mimetype: str) -> Path:
+    return _write_zip(
+        tmp_path / f"sample{suffix}",
+        {
+            "mimetype": mimetype,
+            "content.xml": "<office:document-content/>",
+        },
+    )
 
 
 def _uleb(value: int) -> bytes:
@@ -179,6 +229,51 @@ BYTE_FILETYPE_CASES = [
     ("PE32-AARCH64", _minimal_pe(machine=0xAA64), Type.PE32 | Type.AARCH64),
     ("DOTNET", _minimal_pe(dotnet=True), Type.PE32 | Type.X86 | Type.DOTNET),
     ("NSIS", _minimal_pe(overlay=NSIS_FIRSTHEADER), Type.PE32 | Type.X86 | Type.NSIS),
+    (
+        "actual-installer",
+        _minimal_pe(section_payload=b"Actual Installer package"),
+        Type.PE32 | Type.X86 | Type.ACTUAL_INSTALLER,
+    ),
+    (
+        "advanced-installer",
+        _minimal_pe(section_payload=b"Advanced Installer bootstrapper"),
+        Type.PE32 | Type.X86 | Type.ADVANCED_INSTALLER,
+    ),
+    (
+        "inno-setup",
+        _minimal_pe(section_payload=b"Inno Setup Setup Data"),
+        Type.PE32 | Type.X86 | Type.INNO_SETUP,
+    ),
+    (
+        "installanywhere",
+        _minimal_pe(section_payload=b"InstallAnywhere Zero G"),
+        Type.PE32 | Type.X86 | Type.INSTALLANYWHERE,
+    ),
+    (
+        "installshield",
+        _minimal_pe(section_payload=b"InstallShield ISSetup setup.inx data1.cab"),
+        Type.PE32 | Type.X86 | Type.INSTALLSHIELD,
+    ),
+    (
+        "wise-installer",
+        _minimal_pe(section_payload=b"Wise Installation System"),
+        Type.PE32 | Type.X86 | Type.WISE_INSTALLER,
+    ),
+    (
+        "wix",
+        _minimal_pe(section_payload=b"WiX Toolset Burn Bootstrapper WixBundle"),
+        Type.PE32 | Type.X86 | Type.WIX,
+    ),
+    (
+        "nodejs-pkg",
+        _minimal_pe(section_payload=b"pkg/prelude/bootstrap.js package.json node.js"),
+        Type.PE32 | Type.X86 | Type.NODEJS_PKG,
+    ),
+    (
+        "sfx-peexe",
+        _minimal_pe(overlay=b"PK\x03\x04payload"),
+        Type.PE32 | Type.X86 | Type.SFX_PEEXE,
+    ),
     ("ELF-SPARC", _minimal_elf(0x02), Type.ELF | Type.SPARC),
     ("ELF-M68K", _minimal_elf(0x04), Type.ELF | Type.M68K),
     ("ELF-MIPS", _minimal_elf(0x08), Type.ELF | Type.MIPS),
@@ -214,6 +309,30 @@ BYTE_FILETYPE_CASES = [
         Type.RTF | Type.ROBJ | Type.RDDE | Type.RINC | Type.RHYP | Type.RBIN,
     ),
     ("OLE", OLE_MAGIC, Type.OLE),
+    ("HWP", OLE_MAGIC + b"FileHeader HWP Document File", Type.OLE | Type.HWP),
+    ("PUB", OLE_MAGIC + b"Microsoft Publisher document", Type.OLE | Type.PUB),
+    (
+        "DOC95",
+        OLE_MAGIC + b"Word.Document.6 Word 6.0",
+        Type.OLE | Type.DOC | Type.DOC95,
+    ),
+    ("DOT95", OLE_MAGIC + b"Word.Template.6 dot95", Type.OLE | Type.DOC | Type.DOT95),
+    (
+        "XLS95",
+        OLE_MAGIC + b"Workbook BIFF5 \x09\x08\x10\x00\x00\x05",
+        Type.OLE | Type.XLS | Type.XLS95,
+    ),
+    (
+        "PPT95",
+        OLE_MAGIC + b"PowerPoint Document PowerPoint 95",
+        Type.OLE | Type.PPT | Type.PPT95,
+    ),
+    (
+        "MSC",
+        OLE_MAGIC + b"MMC_ConsoleFile Microsoft Management Console",
+        Type.OLE | Type.MSC,
+    ),
+    ("MSO-CFB", OLE_MAGIC + b"ActiveMime embedded office object", Type.OLE | Type.MSO),
     ("OXML", _zip_with_names("[Content_Types].xml"), Type.ZIP | Type.OXML),
     ("MSI", _minimal_msi(), Type.MSI),
     ("ZIP", _zip_with_names("file.txt"), Type.ZIP),
@@ -225,6 +344,11 @@ BYTE_FILETYPE_CASES = [
     ("SEVENZIP", b"7z\xbc\xaf\x27\x1c", Type.SEVENZIP),
     ("ACE", _bytes_at(7, b"**ACE*"), Type.ACE),
     ("CAB", b"MSCF" + (b"\x00" * 4), Type.CAB),
+    (
+        "MSU",
+        b"MSCF update.mum package.xml Windows6.1-KB.cab Microsoft update",
+        Type.CAB | Type.MSU,
+    ),
     ("ARJ", b"\x60\xea", Type.ARJ),
     ("AR", _ar_archive("file.txt/"), Type.AR),
     ("XZ", b"\xfd7zXZ\x00", Type.XZ),
@@ -256,6 +380,19 @@ BYTE_FILETYPE_CASES = [
     ("WASM", b"\x00asm\x01\x00\x00\x00", Type.WASM),
     ("WASM32", _minimal_wasm_memory(0x00), Type.WASM | Type.WASM32),
     ("WASM64", _minimal_wasm_memory(0x04), Type.WASM | Type.WASM64),
+    ("H5", _bytes_at(512, b"\x89HDF\r\n\x1a\n"), Type.H5),
+    ("DWG", b"AC1027" + (b"\x00" * 16), Type.DWG),
+    (
+        "ASF",
+        b"\x30\x26\xb2\x75\x8e\x66\xcf\x11\xa6\xd9\x00\xaa\x00\x62\xce\x6c",
+        Type.ASF,
+    ),
+    (
+        "WMV",
+        b"\x30\x26\xb2\x75\x8e\x66\xcf\x11\xa6\xd9\x00\xaa\x00\x62\xce\x6c"
+        b"Windows Media Video WMV",
+        Type.ASF | Type.WMV,
+    ),
     ("ARSC", b"\x02\x00\x0c\x00", Type.ARSC),
     ("BXML", b"\x03\x00\x08\x00", Type.BXML),
     ("ASN1", b"\x30\x82", Type.ASN1),
@@ -274,6 +411,33 @@ BYTE_FILETYPE_CASES = [
     ("TORR", b"d8:announce13:http://x4:infod4:name1:xe", Type.TORR),
     ("WOF2", b"wOF2", Type.WOF2),
     ("HTML", b"<html><body></body></html>", Type.HTML),
+    ("CSV", b"name,age\nalice,30\nbob,40\n", Type.CSV),
+    (
+        "ICS",
+        b"BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nEND:VEVENT\nEND:VCALENDAR\n",
+        Type.ICS,
+    ),
+    (
+        "MBOX",
+        b"From sender@example.invalid Thu Jul  9 12:00:00 2026\n"
+        b"From: sender@example.invalid\n"
+        b"Subject: sample\n\nbody\n",
+        Type.MBOX,
+    ),
+    (
+        "RDP",
+        b"screen mode id:i:2\n"
+        b"full address:s:host.example.invalid\n"
+        b"username:s:analyst\n",
+        Type.RDP,
+    ),
+    (
+        "MHTML",
+        b"MIME-Version: 1.0\n"
+        b"Content-Type: multipart/related; boundary=x\n\n"
+        b"--x\nContent-Type: text/html\nContent-Location: https://example.invalid/\n\n<html/>",
+        Type.MHTML,
+    ),
     ("APPD", b"\x00\x05\x16\x07", Type.APPD),
     ("SQLITE", b"SQLite format 3\x00", Type.SQLITE),
     ("PHP", b"<?php echo 1;", Type.PHP),
@@ -306,7 +470,23 @@ BYTE_FILETYPE_CASES = [
     ("U32LEBOM", b"\xff\xfe\x00\x00t\x00\x00\x00", Type.U32LEBOM),
     ("U32BEBOM", b"\x00\x00\xfe\xff\x00\x00\x00t", Type.U32BEBOM),
     ("SVG", b"<svg xmlns='http://www.w3.org/2000/svg'/>", Type.SVG),
+    (
+        "SCT",
+        b"<?xml version='1.0'?><scriptlet><registration progid='x'/>"
+        b"<script language='JScript'></script></scriptlet>",
+        Type.XML | Type.SCT,
+    ),
     ("PICKLE", pickle.dumps({"payload": 2}, protocol=2), Type.PICKLE),
+    (
+        "PYTORCH-PICKLE",
+        b"\x80\x02ctorch._utils\n_rebuild_tensor_v2\n.",
+        Type.PICKLE | Type.PYTORCH_MODEL,
+    ),
+    (
+        "TENSORFLOW-PB",
+        b"\x0a\x0bSavedModel tensorflow serving_default tensor node_def",
+        Type.TENSORFLOW_PB,
+    ),
     ("TNEF", b"\x78\x9f\x3e\x22" + (b"\x00" * 4), Type.TNEF),
     ("LZMA", lzma.compress(b"payload", format=lzma.FORMAT_ALONE), Type.LZMA),
     ("LZ4", b"\x04\x22\x4d\x18\x60\x40\x82", Type.LZ4),
@@ -327,6 +507,12 @@ BYTE_FILETYPE_CASES = [
         b"<libraryDescription xmlns='http://schemas.microsoft.com/windows/2009/library'/>",
         Type.XML | Type.LIBRARYMS,
     ),
+    (
+        "FLAT-ODT",
+        b"<office:document office:mimetype='application/vnd.oasis.opendocument.text'/>",
+        Type.XML | Type.ODT,
+    ),
+    ("MSO", b"ActiveMime\x00\x00\x00", Type.MSO),
 ]
 
 OOXML_FILETYPE_CASES = [
@@ -443,6 +629,26 @@ OLE_CLSID_FILETYPE_CASES = [
     ("FHTML", "5512d112-5cc6-11cf-8d67-00aa00bdce1d", Type.FHTML),
 ]
 
+ODF_PACKAGE_CASES = [
+    ("ODT", ".odt", "application/vnd.oasis.opendocument.text", Type.ZIP | Type.ODT),
+    (
+        "ODS",
+        ".ods",
+        "application/vnd.oasis.opendocument.spreadsheet",
+        Type.ZIP | Type.ODS,
+    ),
+    ("ODC", ".odc", "application/vnd.oasis.opendocument.chart", Type.ZIP | Type.ODC),
+    ("ODF", ".odf", "application/vnd.oasis.opendocument.formula", Type.ZIP | Type.ODF),
+    ("ODG", ".odg", "application/vnd.oasis.opendocument.graphics", Type.ZIP | Type.ODG),
+    ("ODI", ".odi", "application/vnd.oasis.opendocument.image", Type.ZIP | Type.ODI),
+    (
+        "ODP",
+        ".odp",
+        "application/vnd.oasis.opendocument.presentation",
+        Type.ZIP | Type.ODP,
+    ),
+]
+
 
 class _FakeOleFile:
     def __init__(self, clsid: str):
@@ -501,6 +707,40 @@ def test_identify_ooxml_filetypes(
     assert result & expected == expected
 
 
+def test_identify_xlsb_package(tmp_path: Path) -> None:
+    path = _write_ooxml_package(
+        tmp_path,
+        ".xlsb",
+        "application/vnd.ms-excel.sheet.binary.macroEnabled.main",
+        {"xl/workbook.bin": b"\x00"},
+    )
+
+    result = identify_path(path)
+
+    expected = Type.ZIP | Type.OXML | Type.XLSB
+    assert result & expected == expected
+
+
+@pytest.mark.parametrize(
+    ("suffix", "mimetype", "expected"),
+    [
+        pytest.param(suffix, mimetype, expected, id=case_id)
+        for case_id, suffix, mimetype, expected in ODF_PACKAGE_CASES
+    ],
+)
+def test_identify_odf_packages(
+    tmp_path: Path,
+    suffix: str,
+    mimetype: str,
+    expected: Type,
+) -> None:
+    path = _write_odf_package(tmp_path, suffix, mimetype)
+
+    result = identify_path(path)
+
+    assert result & expected == expected
+
+
 def test_identify_android_package_bundle_path(tmp_path: Path) -> None:
     path = tmp_path / "sample.apks"
     with zipfile.ZipFile(path, "w") as archive:
@@ -509,6 +749,87 @@ def test_identify_android_package_bundle_path(tmp_path: Path) -> None:
     result = identify_path(path)
 
     assert result & Type.APKX
+
+
+def test_identify_msix_package(tmp_path: Path) -> None:
+    path = _write_zip(
+        tmp_path / "sample.msix",
+        {
+            "[Content_Types].xml": "<Types/>",
+            "AppxManifest.xml": "<Package/>",
+        },
+    )
+
+    result = identify_path(path)
+
+    expected = Type.ZIP | Type.OXML | Type.MSIX
+    assert result & expected == expected
+
+
+def test_identify_vsix_package(tmp_path: Path) -> None:
+    path = _write_zip(
+        tmp_path / "sample.vsix",
+        {
+            "[Content_Types].xml": "<Types/>",
+            "extension.vsixmanifest": "<PackageManifest/>",
+        },
+    )
+
+    result = identify_path(path)
+
+    expected = Type.ZIP | Type.OXML | Type.VSIX
+    assert result & expected == expected
+
+
+def test_identify_wheel_package(tmp_path: Path) -> None:
+    path = _write_zip(
+        tmp_path / "badlib-0.1.0-py3-none-any.whl",
+        {
+            "badlib-0.1.0.dist-info/WHEEL": "Wheel-Version: 1.0\n",
+            "badlib-0.1.0.dist-info/RECORD": "",
+            "badlib/__init__.py": "",
+        },
+    )
+
+    result = identify_path(path)
+
+    assert result & (Type.ZIP | Type.WHL) == Type.ZIP | Type.WHL
+
+
+def test_identify_xpi_package(tmp_path: Path) -> None:
+    path = _write_zip(
+        tmp_path / "extension.xpi",
+        {
+            "manifest.json": "{}",
+        },
+    )
+
+    result = identify_path(path)
+
+    assert result & (Type.ZIP | Type.XPI) == Type.ZIP | Type.XPI
+
+
+def test_identify_zipx_by_extension(tmp_path: Path) -> None:
+    path = _write_zip(tmp_path / "archive.zipx", {"file.txt": "payload"})
+
+    result = identify_path(path)
+
+    assert result & (Type.ZIP | Type.ZIPX) == Type.ZIP | Type.ZIPX
+
+
+def test_identify_pytorch_zip_package(tmp_path: Path) -> None:
+    path = _write_zip(
+        tmp_path / "model.pt",
+        {
+            "archive/data.pkl": b"torch._utils\n",
+            "archive/version": "3\n",
+            "archive/constants.pkl": b"",
+        },
+    )
+
+    result = identify_path(path)
+
+    assert result & (Type.ZIP | Type.PYTORCH_MODEL) == Type.ZIP | Type.PYTORCH_MODEL
 
 
 def test_identify_webassembly_imported_memory_bitness() -> None:
@@ -543,11 +864,96 @@ def test_identify_ole_clsid_filetypes(
     assert result & (Type.OLE | expected) == Type.OLE | expected
 
 
+def test_generic_zip_does_not_match_specific_package_formats(tmp_path: Path) -> None:
+    path = _write_zip(tmp_path / "generic.zip", {"file.txt": "payload"})
+
+    result = identify_path(path)
+
+    specific = (
+        Type.XLSB
+        | Type.ODT
+        | Type.ODS
+        | Type.ODC
+        | Type.ODF
+        | Type.ODG
+        | Type.ODI
+        | Type.ODP
+        | Type.WHL
+        | Type.VSIX
+        | Type.MSIX
+        | Type.XPI
+        | Type.ZIPX
+        | Type.PYTORCH_MODEL
+    )
+    assert result & Type.ZIP
+    assert not result & specific
+
+
+def test_generic_cfb_does_not_match_specific_ole_formats() -> None:
+    result = identify(OLE_MAGIC)
+
+    specific = (
+        Type.HWP
+        | Type.PUB
+        | Type.DOC95
+        | Type.DOT95
+        | Type.XLS95
+        | Type.PPT95
+        | Type.MSC
+        | Type.MSO
+    )
+    assert result & Type.OLE
+    assert not result & specific
+
+
+def test_generic_pe_does_not_match_installer_node_or_sfx() -> None:
+    result = identify(_minimal_pe())
+
+    specific = (
+        Type.ACTUAL_INSTALLER
+        | Type.ADVANCED_INSTALLER
+        | Type.INNO_SETUP
+        | Type.INSTALLANYWHERE
+        | Type.INSTALLSHIELD
+        | Type.WISE_INSTALLER
+        | Type.WIX
+        | Type.NODEJS_PKG
+        | Type.SFX_PEEXE
+    )
+    assert result & Type.PE32
+    assert not result & specific
+
+
+def test_random_text_does_not_match_structured_text_formats() -> None:
+    result = identify(b"this is some random text\nwith two lines\nand no structure\n")
+
+    specific = Type.CSV | Type.ICS | Type.MBOX | Type.RDP | Type.SCT | Type.MHTML
+    assert not result & specific
+
+
+def test_arbitrary_protobuf_or_pickle_do_not_match_model_formats() -> None:
+    assert not identify(b"\x08\x01\x12\x03abc") & Type.TENSORFLOW_PB
+    assert not (
+        identify(pickle.dumps({"payload": "not torch"}, protocol=2))
+        & Type.PYTORCH_MODEL
+    )
+
+
 def test_identification_cases_cover_every_filetype() -> None:
     expected_values = [expected for _, _, expected in BYTE_FILETYPE_CASES]
     expected_values.extend(expected for _, _, expected, _ in OOXML_FILETYPE_CASES)
     expected_values.extend(expected for _, _, expected in OLE_CLSID_FILETYPE_CASES)
-    expected_values.append(Type.APKX)
+    expected_values.extend(expected for _, _, _, expected in ODF_PACKAGE_CASES)
+    expected_values.extend([
+        Type.APKX,
+        Type.XLSB,
+        Type.MSIX,
+        Type.VSIX,
+        Type.WHL,
+        Type.XPI,
+        Type.ZIPX,
+        Type.PYTORCH_MODEL,
+    ])
 
     missing = set(Type) - _covered_flags(expected_values)
 
@@ -556,6 +962,28 @@ def test_identification_cases_cover_every_filetype() -> None:
 
 def test_ooxml_content_type_exports_cover_detector_map() -> None:
     assert set(OOXML_CONTENT_MAP) <= OOXML_CONTENT_TYPES
+
+
+@pytest.mark.parametrize(
+    ("alias", "canonical"),
+    [
+        ("mht", "mhtml"),
+        ("mhtml", "mhtml"),
+        ("mht/mhtml", "mhtml"),
+        ("sfx-peexe", "sfx-peexe"),
+        ("sfx/peexe", "sfx-peexe"),
+        ("peexe-sfx", "sfx-peexe"),
+        ("self-extracting-pe", "sfx-peexe"),
+    ],
+)
+def test_format_id_aliases(alias: str, canonical: str) -> None:
+    assert resolve_format_id(alias) == canonical
+
+
+def test_format_ids_are_lowercase() -> None:
+    result = Type.ZIP | Type.WHL | Type.MHTML | Type.SFX_PEEXE
+
+    assert format_ids(result) == ["sfx-peexe", "whl", "mhtml"]
 
 
 def test_identify_bytes() -> None:

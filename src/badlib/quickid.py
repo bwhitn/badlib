@@ -6,11 +6,15 @@ from typing import Any, List
 
 __all__ = [
     "COMMONTYPE",
+    "FORMAT_ALIASES",
+    "FORMAT_IDS",
     "OOXML_CONTENT_TYPES",
     "QuickID",
     "Type",
+    "format_ids",
     "identify",
     "identify_path",
+    "resolve_format_id",
     "type_names",
 ]
 
@@ -196,6 +200,49 @@ class Type(IntFlag):
     NSIS = auto()  # Nullsoft Scriptable Install System installer
     WASM32 = auto()  # WebAssembly with 32-bit linear memory
     WASM64 = auto()  # WebAssembly with 64-bit linear memory
+    XLSB = auto()  # Excel Binary Workbook
+    ODT = auto()  # OpenDocument Text
+    ODS = auto()  # OpenDocument Spreadsheet
+    ODC = auto()  # OpenDocument Chart
+    ODF = auto()  # OpenDocument Formula
+    ODG = auto()  # OpenDocument Graphics
+    ODI = auto()  # OpenDocument Image
+    ODP = auto()  # OpenDocument Presentation
+    HWP = auto()  # Hangul Word Processor
+    PUB = auto()  # Microsoft Publisher
+    DOC95 = auto()  # Word 6/95 document
+    DOT95 = auto()  # Word 6/95 template
+    XLS95 = auto()  # Excel 95 workbook
+    PPT95 = auto()  # PowerPoint 95 presentation
+    ACTUAL_INSTALLER = auto()  # Actual Installer package
+    ADVANCED_INSTALLER = auto()  # Advanced Installer package
+    INNO_SETUP = auto()  # Inno Setup installer
+    INSTALLANYWHERE = auto()  # InstallAnywhere installer
+    INSTALLSHIELD = auto()  # InstallShield installer
+    WISE_INSTALLER = auto()  # Wise installer
+    WIX = auto()  # WiX/Burn installer
+    CSV = auto()  # Comma-separated values
+    ICS = auto()  # iCalendar data
+    MBOX = auto()  # Unix mbox mailbox
+    RDP = auto()  # Remote Desktop connection settings
+    NODEJS_PKG = auto()  # Node.js pkg executable
+    SFX_PEEXE = auto()  # PE self-extracting executable
+    MSU = auto()  # Windows Update Standalone package
+    VSIX = auto()  # Visual Studio extension
+    WHL = auto()  # Python wheel
+    XPI = auto()  # Firefox extension package
+    H5 = auto()  # HDF5 data
+    MHTML = auto()  # MIME HTML archive
+    MSC = auto()  # Microsoft Management Console
+    MSO = auto()  # Office ActiveMime/MSO data
+    SCT = auto()  # Windows Scriptlet Component
+    TENSORFLOW_PB = auto()  # TensorFlow protobuf model
+    PYTORCH_MODEL = auto()  # PyTorch model/checkpoint
+    DWG = auto()  # AutoCAD DWG
+    ASF = auto()  # Advanced Systems Format
+    WMV = auto()  # Windows Media Video
+    MSIX = auto()  # MSIX/AppX package
+    ZIPX = auto()  # WinZip extended ZIP archive
 
 
 COMMONTYPE = {
@@ -299,6 +346,49 @@ COMMONTYPE = {
     Type.NSIS: "Nullsoft Scriptable Install System Installer",
     Type.WASM32: "WebAssembly 32-bit Memory",
     Type.WASM64: "WebAssembly 64-bit Memory",
+    Type.XLSB: "xlsb",
+    Type.ODT: "odt",
+    Type.ODS: "ods",
+    Type.ODC: "odc",
+    Type.ODF: "odf",
+    Type.ODG: "odg",
+    Type.ODI: "odi",
+    Type.ODP: "odp",
+    Type.HWP: "hwp",
+    Type.PUB: "pub",
+    Type.DOC95: "doc95",
+    Type.DOT95: "dot95",
+    Type.XLS95: "xls95",
+    Type.PPT95: "ppt95",
+    Type.ACTUAL_INSTALLER: "actual-installer",
+    Type.ADVANCED_INSTALLER: "advanced-installer",
+    Type.INNO_SETUP: "inno-setup",
+    Type.INSTALLANYWHERE: "installanywhere",
+    Type.INSTALLSHIELD: "installshield",
+    Type.WISE_INSTALLER: "wise-installer",
+    Type.WIX: "wix",
+    Type.CSV: "csv",
+    Type.ICS: "ics",
+    Type.MBOX: "mbox",
+    Type.RDP: "rdp",
+    Type.NODEJS_PKG: "nodejs-pkg",
+    Type.SFX_PEEXE: "sfx-peexe",
+    Type.MSU: "msu",
+    Type.VSIX: "vsix",
+    Type.WHL: "whl",
+    Type.XPI: "xpi",
+    Type.H5: "h5",
+    Type.MHTML: "mhtml",
+    Type.MSC: "msc",
+    Type.MSO: "mso",
+    Type.SCT: "sct",
+    Type.TENSORFLOW_PB: "tensorflow-pb",
+    Type.PYTORCH_MODEL: "pytorch-model",
+    Type.DWG: "dwg",
+    Type.ASF: "asf",
+    Type.WMV: "wmv",
+    Type.MSIX: "msix",
+    Type.ZIPX: "zipx",
     Type.BPLS: "Binary Property List",
     Type.IURL: "Internet Shortcut",
     Type.DAA: "PowerISO DAA Disk Image",
@@ -374,6 +464,113 @@ COMMONTYPE = {
     Type.AU300: "AutoIt v3.00 - v3.25 Script",
     Type.AU326: "AutoIt v3.26+ Script"
 }
+
+FORMAT_IDS = {
+    Type.XLSB: "xlsb",
+    Type.ODT: "odt",
+    Type.ODS: "ods",
+    Type.ODC: "odc",
+    Type.ODF: "odf",
+    Type.ODG: "odg",
+    Type.ODI: "odi",
+    Type.ODP: "odp",
+    Type.HWP: "hwp",
+    Type.PUB: "pub",
+    Type.DOC95: "doc95",
+    Type.DOT95: "dot95",
+    Type.XLS95: "xls95",
+    Type.PPT95: "ppt95",
+    Type.ACTUAL_INSTALLER: "actual-installer",
+    Type.ADVANCED_INSTALLER: "advanced-installer",
+    Type.INNO_SETUP: "inno-setup",
+    Type.INSTALLANYWHERE: "installanywhere",
+    Type.INSTALLSHIELD: "installshield",
+    Type.WISE_INSTALLER: "wise-installer",
+    Type.WIX: "wix",
+    Type.CSV: "csv",
+    Type.ICS: "ics",
+    Type.MBOX: "mbox",
+    Type.RDP: "rdp",
+    Type.NODEJS_PKG: "nodejs-pkg",
+    Type.SFX_PEEXE: "sfx-peexe",
+    Type.MSU: "msu",
+    Type.VSIX: "vsix",
+    Type.WHL: "whl",
+    Type.XPI: "xpi",
+    Type.H5: "h5",
+    Type.MHTML: "mhtml",
+    Type.MSC: "msc",
+    Type.MSO: "mso",
+    Type.SCT: "sct",
+    Type.TENSORFLOW_PB: "tensorflow-pb",
+    Type.PYTORCH_MODEL: "pytorch-model",
+    Type.DWG: "dwg",
+    Type.ASF: "asf",
+    Type.WMV: "wmv",
+    Type.MSIX: "msix",
+    Type.ZIPX: "zipx",
+}
+
+FORMAT_ALIASES = {
+    value: value for value in FORMAT_IDS.values()
+}
+FORMAT_ALIASES.update({
+    "mht": "mhtml",
+    "mht/mhtml": "mhtml",
+    "sfx/peexe": "sfx-peexe",
+    "peexe-sfx": "sfx-peexe",
+    "self-extracting-pe": "sfx-peexe",
+})
+
+ODF_MIME_MAP = {
+    "application/vnd.oasis.opendocument.text": Type.ODT,
+    "application/vnd.oasis.opendocument.spreadsheet": Type.ODS,
+    "application/vnd.oasis.opendocument.chart": Type.ODC,
+    "application/vnd.oasis.opendocument.formula": Type.ODF,
+    "application/vnd.oasis.opendocument.graphics": Type.ODG,
+    "application/vnd.oasis.opendocument.image": Type.ODI,
+    "application/vnd.oasis.opendocument.presentation": Type.ODP,
+}
+
+ZIPX_METHODS = {12, 14, 18, 19, 98}
+HDF5_SIGNATURE = b"\x89HDF\r\n\x1a\n"
+ASF_HEADER_GUID = b"\x30\x26\xb2\x75\x8e\x66\xcf\x11\xa6\xd9\x00\xaa\x00\x62\xce\x6c"
+
+INSTALLER_MARKERS = [
+    (Type.ACTUAL_INSTALLER, [b"actual installer"]),
+    (Type.ADVANCED_INSTALLER, [b"advanced installer"]),
+    (Type.INNO_SETUP, [b"inno setup", b"inno setup setup data", b"jrsoftware"]),
+    (Type.INSTALLANYWHERE, [b"installanywhere", b"zero g registry", b"zerog"]),
+    (Type.INSTALLSHIELD, [b"installshield", b"issetup", b"setup.inx", b"data1.cab"]),
+    (Type.WISE_INSTALLER, [b"wise installation system", b"wise installer"]),
+    (Type.WIX, [b"wixbundle", b"wix toolset", b"burn bootstrapper", b"burnmanifest"]),
+]
+
+INSTALLER_TYPES = (
+    Type.ACTUAL_INSTALLER
+    | Type.ADVANCED_INSTALLER
+    | Type.INNO_SETUP
+    | Type.INSTALLANYWHERE
+    | Type.INSTALLSHIELD
+    | Type.WISE_INSTALLER
+    | Type.WIX
+    | Type.NSIS
+)
+
+PE_OVERLAY_ARCHIVE_MARKERS = (
+    b"PK\x03\x04",
+    b"7z\xbc\xaf\x27\x1c",
+    b"Rar!",
+    b"MSCF",
+    b"\x1f\x8b",
+)
+
+NODEJS_PKG_MARKERS = (
+    b"pkg/prelude/bootstrap.js",
+    b"snapshot_blob.bin",
+    b"pkg_snapshot",
+    b"nodejs.pkg",
+)
 
 
 OOXML_CONTENT_TYPES = {
@@ -526,7 +723,7 @@ OOXML_CONTENT_MAP = {
     "application/vnd.ms-word.template.macroEnabled.12": Type.DOTM,
     "application/vnd.ms-word.vbaData+xml": Type.DOCM,
     "application/vnd.ms-excel.sheet.macroEnabled.12": Type.XLSM,
-    "application/vnd.ms-excel.sheet.binary.macroEnabled.main": Type.XLSM,
+    "application/vnd.ms-excel.sheet.binary.macroEnabled.main": Type.XLSB,
     "application/vnd.ms-excel.template.macroEnabled.12": Type.XLTM,
     "application/vnd.ms-excel.intlmacrosheet": Type.XLSM,
     "application/vnd.ms-excel.macrosheet": Type.XLSM,
@@ -643,7 +840,7 @@ MAGIC_NUM = [
         b'\xce\xfa\xed\xfe': (Type.MACHO, "_macho"),
         b'\xcf\xfa\xed\xfe': (Type.MACHO, "_macho"),
         b'\xca\xfe\xba\xbe': (0, "_cafebabe"),
-        b'MSCF': (Type.CAB, None),
+        b'MSCF': (Type.CAB, "_cab"),
         b'#@~^': (Type.MSES, None),
         b'\x00asm': (0, "_wasm"),
         b'\x28\xb5\x2f\xfd': (Type.ZST, None),
@@ -690,6 +887,8 @@ MAGIC_NUM = [
         b'\xe4\x52\x5c\x7b\x8c\xd8\xa7\x4d': (Type.ONE, None),
         b'L\x00\x00\x00\x01\x14\x02\x00': (Type.LNK, None),
         b'MSWIM\x00\x00\x00': (Type.WIM, None),
+        b'ActiveMi': (0, "_active_mime"),
+        HDF5_SIGNATURE: (Type.H5, None),
         b'mrm_pri2': (Type.PRI, None),
         b'\x89PNG\x0d\x0a\x1a\x0a': (Type.PNG, None),
         b'bplist00': (Type.BPLS, None),
@@ -699,6 +898,7 @@ MAGIC_NUM = [
     }),
     ((0, 16), {
         b'SQLite format 3\x00': (Type.SQLITE, None),
+        ASF_HEADER_GUID: (Type.ASF, "_asf"),
         b'<!-- saved from ': (0, "_saved_web"),
         b'<!-- Saved From ': (0, "_saved_web"),
         b'-----BEGIN CERTI': (0, "_pemc"),
@@ -774,6 +974,36 @@ class QuickID:
                         return buffs.index(buffb)
             return -1
 
+        def _path_lower() -> str:
+            return str(getattr(obj, "_path", "") or "").lower()
+
+        def _bounded_bytes(limit: int = 262144, start: int = 0) -> bytes:
+            total = _data_size()
+            if start < 0:
+                start = max(total + start, 0)
+            end = min(total, start + limit)
+            if start >= end:
+                return b""
+            return bytes(data[start:end])
+
+        def _bounded_lower(limit: int = 262144, start: int = 0) -> bytes:
+            return _bounded_bytes(limit=limit, start=start).lower()
+
+        def _zip_read_small(zf: Any, name: str, limit: int = 65536) -> bytes:
+            try:
+                info = zf.getinfo(name)
+                if info.file_size > limit:
+                    return b""
+                return zf.read(name)[:limit]
+            except Exception:
+                return b""
+
+        def _zip_read_text(zf: Any, name: str, limit: int = 65536) -> str:
+            return _zip_read_small(zf, name, limit).decode("utf-8", errors="ignore")
+
+        def _normalized_zip_names(names: list[str]) -> set[str]:
+            return {name.replace("\\", "/") for name in names}
+
         def _pe_section_raw_end(pe_offset: int) -> int:
             section_count = _unpack_from("<H", pe_offset + 6)[0]
             optional_header_size = _unpack_from("<H", pe_offset + 20)[0]
@@ -822,6 +1052,39 @@ class QuickID:
                     obj._filetype |= Type.NSIS
                     return
 
+        def _mark_installer_strings(scan: bytes) -> None:
+            for installer_type, markers in INSTALLER_MARKERS:
+                if any(marker in scan for marker in markers):
+                    obj._filetype |= installer_type
+
+        def _nodejs_pkg(scan: bytes) -> bool:
+            has_pkg_marker = any(marker in scan for marker in NODEJS_PKG_MARKERS)
+            has_runtime_context = b"package.json" in scan or b"node.js" in scan or b"node::" in scan
+            if has_pkg_marker and has_runtime_context:
+                obj._filetype |= Type.NODEJS_PKG
+                return True
+            return False
+
+        def _pe_subtypes(pe_offset: int) -> None:
+            scan = _bounded_lower(524288)
+            _mark_installer_strings(scan)
+            _nodejs_pkg(scan)
+
+            raw_end = _pe_section_raw_end(pe_offset)
+            if raw_end == 0:
+                return
+            overlay = _bounded_bytes(limit=65536, start=raw_end)
+            if not overlay:
+                return
+            overlay_scan = overlay.lower()
+            _mark_installer_strings(overlay_scan)
+            if _nodejs_pkg(overlay_scan):
+                return
+            if int(obj._filetype) & int(INSTALLER_TYPES):
+                return
+            if any(marker in overlay for marker in PE_OVERLAY_ARCHIVE_MARKERS):
+                obj._filetype |= Type.SFX_PEEXE
+
         def _pe():
             pe_offset = _unpack_from("<I", 0x3C)[0]
             if data[pe_offset: pe_offset + 4] == b"PE\0\0":
@@ -834,15 +1097,22 @@ class QuickID:
                     if not (clr_rva == 0 or clr_size == 0):
                         obj._filetype |= Type.DOTNET
                     _nsis(pe_offset)
+                    _pe_subtypes(pe_offset)
 
         def _elf():
             endian_flag = data[5]
             endian = "little" if endian_flag == 1 else "big"
             e_machine = int.from_bytes(data[18:20], endian)
             obj._filetype |= ELF_ARCH_MAP.get(e_machine, 0)
+            scan = _bounded_lower(524288)
+            _mark_installer_strings(scan)
+            _nodejs_pkg(scan)
 
         def _macho():
             obj._filetype |= MACHO_ARCH_MAP.get(_unpack_from("<I", 4)[0], 0)
+            scan = _bounded_lower(524288)
+            _mark_installer_strings(scan)
+            _nodejs_pkg(scan)
 
         def _cafebabe():
             nfat_arch = int.from_bytes(data[4:8], "big")
@@ -896,7 +1166,6 @@ class QuickID:
             obj._filetype |= Type.OLE
 
         def _zip():
-            p = data[0:]
             hit = _find_first(b"PK\x01\x02", 66,
                               [b"[Content_Types].xml", b"AndroidManifest.xml",
                                b"META-INF/MANIFEST.MF", b"WEB-INF/web.xml"])
@@ -906,32 +1175,147 @@ class QuickID:
             else:
                 obj._filetype |= result
             path = getattr(obj, "_path", None)
-            path_lower = str(path or "").lower()
+            path_lower = _path_lower()
             if path_lower.endswith((".apkx", ".apks", ".apkm")):
                 obj._filetype |= Type.APKX
-            if result != Type.OXML:
-                return
             if not path:
                 return
             try:
                 import zipfile
                 with zipfile.ZipFile(path, "r") as zf:
-                    has_content_types = "[Content_Types].xml" in zf.namelist()
-                    if not has_content_types:
-                        return
-                    content = zf.read("[Content_Types].xml")
-                    text = content.decode("utf-8", errors="ignore")
-                    for key, val in OOXML_CONTENT_MAP.items():
-                        if key in text:
-                            obj._filetype |= val
+                    names = zf.namelist()
+                    normalized_names = _normalized_zip_names(names)
+                    lower_names = {name.lower() for name in normalized_names}
+                    infos = zf.infolist()
+
+                    if path_lower.endswith(".zipx") or any(
+                        info.compress_type in ZIPX_METHODS or info.flag_bits & 0x40
+                        for info in infos
+                    ):
+                        obj._filetype |= Type.ZIPX
+
+                    mimetype = _zip_read_text(zf, "mimetype", limit=256).strip()
+                    odf_type = ODF_MIME_MAP.get(mimetype)
+                    if odf_type is not None:
+                        obj._filetype |= odf_type
+
+                    if "[Content_Types].xml" in normalized_names:
+                        obj._filetype |= Type.OXML
+                        content_text = _zip_read_text(zf, "[Content_Types].xml")
+                        content_lower = content_text.lower()
+                        has_rels = "_rels/.rels" in lower_names
+                        if (
+                            has_rels
+                            and "xl/workbook.bin" in lower_names
+                            and "application/vnd.ms-excel.sheet.binary.macroenabled.main" in content_lower
+                        ):
+                            obj._filetype |= Type.XLSB
+                        for key, val in OOXML_CONTENT_MAP.items():
+                            if key.lower() in content_lower:
+                                obj._filetype |= val
+                        if "appxmanifest.xml" in lower_names:
+                            obj._filetype |= Type.MSIX
+                        if "extension.vsixmanifest" in lower_names:
+                            obj._filetype |= Type.VSIX
+
+                    dist_info_wheels = [
+                        name for name in lower_names
+                        if name.endswith(".dist-info/wheel") and name.count("/") == 1
+                    ]
+                    if len(dist_info_wheels) == 1:
+                        dist_info_prefix = dist_info_wheels[0].rsplit("/", 1)[0] + "/"
+                        if (
+                            any(name == dist_info_prefix + "record" for name in lower_names)
+                            or path_lower.endswith(".whl")
+                        ):
+                            obj._filetype |= Type.WHL
+
+                    if (
+                        "install.rdf" in lower_names
+                        or "chrome.manifest" in lower_names
+                        or "meta-inf/mozilla.rsa" in lower_names
+                        or (path_lower.endswith(".xpi") and "manifest.json" in lower_names)
+                    ):
+                        obj._filetype |= Type.XPI
+
+                    pytorch_markers = {
+                        "data.pkl",
+                        "constants.pkl",
+                        "version",
+                        "model.json",
+                    }
+                    if any(name.rsplit("/", 1)[-1] in pytorch_markers for name in lower_names) and any(
+                        name.endswith("data.pkl") for name in lower_names
+                    ):
+                        obj._filetype |= Type.PYTORCH_MODEL
             except Exception:
                 return
             return
+
+        def _ole_scan_subtypes(raw: bytes) -> None:
+            scan = raw.lower()
+            if b"fileheader" in scan and b"hwp document file" in scan:
+                obj._filetype |= Type.HWP
+            if b"microsoft publisher" in scan or b"publisher document" in scan:
+                obj._filetype |= Type.PUB
+            if b"word.template.6" in scan or b"word.template.7" in scan or b"dot95" in scan:
+                obj._filetype |= Type.DOC | Type.DOT95
+            if b"word.document.6" in scan or b"word.document.7" in scan or b"word 6.0" in scan:
+                obj._filetype |= Type.DOC | Type.DOC95
+            if b"powerpoint document" in scan and (b"powerpoint 95" in scan or b"ppt95" in scan):
+                obj._filetype |= Type.PPT | Type.PPT95
+            if b"mmc_consolefile" in scan or b"microsoft management console" in scan:
+                obj._filetype |= Type.MSC
+            if b"activemime" in scan:
+                obj._filetype |= Type.MSO
+            if b"workbook" in scan and b"\x09\x08" in raw and (b"\x05\x00" in raw or b"biff5" in scan):
+                obj._filetype |= Type.XLS | Type.XLS95
+
+        def _ole_stream_names(ole: Any) -> list[str]:
+            names: list[str] = []
+            try:
+                for path_parts in ole.listdir(streams=True, storages=True):
+                    if isinstance(path_parts, (list, tuple)):
+                        names.append("/".join(str(part) for part in path_parts))
+                    else:
+                        names.append(str(path_parts))
+            except Exception:
+                pass
+            return names
+
+        def _ole_read_stream(ole: Any, name: str, limit: int = 65536) -> bytes:
+            try:
+                stream = ole.openstream(name.split("/"))
+            except Exception:
+                try:
+                    stream = ole.openstream(name)
+                except Exception:
+                    return b""
+            try:
+                return stream.read(limit)
+            except Exception:
+                return b""
+
+        def _olefile_subtypes(ole: Any) -> None:
+            names = _ole_stream_names(ole)
+            names_lower = [name.lower() for name in names]
+            joined = "\n".join(names_lower).encode()
+            _ole_scan_subtypes(joined)
+
+            if "fileheader" in names_lower:
+                header = _ole_read_stream(ole, names[names_lower.index("fileheader")], limit=512)
+                if b"HWP Document File" in header:
+                    obj._filetype |= Type.HWP
+            for index, _name in enumerate(names_lower):
+                raw = _ole_read_stream(ole, names[index], limit=4096)
+                if raw:
+                    _ole_scan_subtypes(names[index].encode(errors="ignore") + b"\n" + raw)
 
         def _olecf():
             msi = _find_first(b'\x52\x00\x6f\x00\x6f\x00\x74\x00\x20\x00\x45\x00\x6e\x00\x74\x00\x72\x00\x79\x00',
                               100, [b'\x84\x10\x0c\x00\x00\x00\x00\x00\xc0\x00\x00\x00\x00\x00\x00\x46'])
             obj._filetype |= Type.MSI if msi != -1 else Type.OLE
+            _ole_scan_subtypes(_bounded_bytes(262144))
             path = getattr(obj, "_path", None)
             if msi != -1 or not path:
                 return
@@ -952,6 +1336,7 @@ class QuickID:
                             obj._filetype |= val
                     except Exception:
                         continue
+                _olefile_subtypes(ole)
             finally:
                 try:
                     ole.close()
@@ -1029,6 +1414,68 @@ class QuickID:
                 obj._filetype |= Type.AIF
             elif ftype == b'AIFC':
                 obj._filetype |= Type.AIFC
+
+        def _cab():
+            scan = _bounded_lower(262144)
+            if (
+                b".cab" in scan
+                and (b".xml" in scan or b"update.mum" in scan or b"wsusscan" in scan)
+                and (b"package" in scan or b"update" in scan or b"microsoft" in scan)
+            ):
+                obj._filetype |= Type.MSU
+
+        def _active_mime():
+            if _data_size() >= 10 and data[:10] == b"ActiveMime":
+                obj._filetype |= Type.MSO
+
+        def _asf():
+            scan = _bounded_lower(65536)
+            obj._filetype |= Type.ASF
+            if b"wmv" in scan or b"windows media video" in scan or b"wm/video" in scan:
+                obj._filetype |= Type.WMV
+
+        def _hdf5():
+            for offset in (0, 512, 1024, 2048, 4096, 8192, 16384):
+                if _data_size() >= offset + len(HDF5_SIGNATURE) and data[offset:offset + 8] == HDF5_SIGNATURE:
+                    obj._filetype |= Type.H5
+                    return
+
+        def _dwg():
+            if _data_size() >= 6 and data[:4] == b"AC10" and bytes(data[4:6]).isdigit():
+                obj._filetype |= Type.DWG
+
+        def _tensorflow_pb():
+            scan = _bounded_lower(262144)
+            path = _path_lower()
+            strong_markers = (
+                b"savedmodel",
+                b"saved_model",
+                b"tensorflow",
+                b"signaturedef",
+                b"graphdef",
+            )
+            weak_markers = (b"serving_default", b"node_def", b"tensor", b"op")
+            if path.endswith("saved_model.pb") and any(marker in scan for marker in weak_markers + strong_markers):
+                obj._filetype |= Type.TENSORFLOW_PB
+                return
+            marker_count = sum(1 for marker in strong_markers if marker in scan)
+            if marker_count >= 1 and any(marker in scan for marker in weak_markers):
+                obj._filetype |= Type.TENSORFLOW_PB
+
+        def _pytorch_pickle():
+            path = _path_lower()
+            if not (int(obj._filetype) & int(Type.PICKLE) or path.endswith((".pt", ".pth", ".pkl", ".pickle"))):
+                return
+            scan = _bounded_lower(262144)
+            if b"torch" not in scan:
+                return
+            if (
+                b"torch._utils" in scan
+                or b"torch.storage" in scan
+                or b"torch.nn.modules" in scan
+                or b"pytorch" in scan
+            ):
+                obj._filetype |= Type.PYTORCH_MODEL
 
         def _ico():
             if _data_size() < 22:
@@ -1479,6 +1926,108 @@ class QuickID:
             if any(line.lower().startswith(url_prefixes) for line in lines[1:12]):
                 obj._filetype |= Type.IQY
 
+        def _csv_text(text: str) -> bool:
+            normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+            lines = [line.strip() for line in normalized.split("\n") if line.strip()]
+            if len(lines) < 3:
+                return False
+            sample = lines[:10]
+            if any(line.startswith(("<", "{", "[", "BEGIN:")) for line in sample):
+                return False
+            for delimiter in (",", ";", "\t", "|"):
+                counts = [line.count(delimiter) for line in sample]
+                if min(counts) <= 0:
+                    continue
+                if len(set(counts)) == 1 and counts[0] >= 1:
+                    return True
+            return False
+
+        def _mbox_text(text: str) -> bool:
+            normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+            lines = normalized.split("\n")
+            for index, line in enumerate(lines[:200]):
+                if not line.startswith("From "):
+                    continue
+                header_lines = lines[index + 1:index + 12]
+                header_count = 0
+                for header in header_lines:
+                    if not header:
+                        break
+                    name = header.split(":", 1)[0].lower()
+                    if name in {"from", "to", "subject", "date", "message-id", "content-type"}:
+                        header_count += 1
+                if header_count >= 2:
+                    return True
+            return False
+
+        def _rdp_text(text: str) -> bool:
+            lines = [line.strip().lower() for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+            known = {
+                "screen mode id:i:",
+                "desktopwidth:i:",
+                "desktopheight:i:",
+                "session bpp:i:",
+                "full address:s:",
+                "username:s:",
+                "authentication level:i:",
+            }
+            return sum(1 for line in lines if any(line.startswith(prefix) for prefix in known)) >= 2
+
+        def _mhtml_text(text: str) -> bool:
+            lower = text[:16384].lower()
+            if "content-type: multipart/related" in lower and (
+                "content-location:" in lower or "text/html" in lower
+            ):
+                return True
+            if "mime-version:" in lower and "content-location:" in lower and (
+                "text/html" in lower or "<html" in lower
+            ):
+                return True
+            return False
+
+        def _sct_text(text: str) -> bool:
+            lower = text[:16384].lower()
+            if "<scriptlet" not in lower:
+                return False
+            return (
+                "<registration" in lower
+                or "<script language=" in lower
+                or "progid=" in lower
+                or "classid=" in lower
+            )
+
+        def _flat_odf_text(text: str) -> None:
+            lower = text[:16384].lower()
+            if "office:mimetype" not in lower:
+                return
+            for mimetype, odf_type in ODF_MIME_MAP.items():
+                if mimetype in lower:
+                    obj._filetype |= Type.XML | odf_type
+                    return
+
+        def _structured_text_formats() -> None:
+            text = _decoded_text_prefix(16384)
+            if not text:
+                return
+            upper = text[:16384].upper()
+            lower = text[:16384].lower()
+            if "BEGIN:VCALENDAR" in upper and "VERSION:" in upper and "END:VCALENDAR" in upper:
+                obj._filetype |= Type.ICS
+            if _mbox_text(text):
+                obj._filetype |= Type.MBOX
+            if _rdp_text(text):
+                obj._filetype |= Type.RDP
+            if _mhtml_text(text):
+                obj._filetype |= Type.MHTML
+            if _sct_text(text):
+                obj._filetype |= Type.XML | Type.SCT
+            if "<office:document" in lower or "<office:document-content" in lower:
+                _flat_odf_text(text)
+            text_marker_types = int(Type.U8BOM | Type.U16LEBOM | Type.U16BEBOM | Type.U32LEBOM | Type.U32BEBOM)
+            if int(obj._filetype) == 0 or (int(obj._filetype) & ~text_marker_types) == 0:
+                if _csv_text(text):
+                    obj._filetype |= Type.CSV
+
         obj._filetype = 0
 
         func_map = {
@@ -1494,6 +2043,9 @@ class QuickID:
             "_ole1_embedded": _ole1_embedded,
             "_olecf": _olecf,
             "_aiff": _aiff,
+            "_cab": _cab,
+            "_active_mime": _active_mime,
+            "_asf": _asf,
             "_bzh_or_id3": _bzh_or_id3,
             "_bom": _bom,
             "_php_or_xml": _php_or_xml,
@@ -1533,10 +2085,19 @@ class QuickID:
             _pyc()
         if obj._filetype == 0:
             _lzma()
+        if obj._filetype == 0:
+            _hdf5()
+        if obj._filetype == 0:
+            _dwg()
+        if int(obj._filetype) & int(Type.SH | Type.CLASS):
+            _mark_installer_strings(_bounded_lower(262144))
+        _tensorflow_pb()
+        _pytorch_pickle()
         text_marker_types = int(Type.U8BOM | Type.U16LEBOM | Type.U16BEBOM | Type.U32LEBOM | Type.U32BEBOM)
         if obj._filetype == 0 or (int(obj._filetype) & ~text_marker_types) == 0:
             _eml()
             _iqy()
+        _structured_text_formats()
         if _looks_like_libraryms_markup():
             obj._filetype |= Type.XML | Type.LIBRARYMS
         if obj._filetype == 0 and _looks_like_svg_markup():
@@ -1584,3 +2145,17 @@ def type_names(file_type: Type | int) -> list[str]:
     value = Type(file_type)
     names = [name for flag, name in COMMONTYPE.items() if value & flag]
     return names or [COMMONTYPE[Type.UNK]]
+
+
+def format_ids(file_type: Type | int) -> list[str]:
+    """Return canonical lowercase format IDs for a ``Type`` bitmask."""
+    value = Type(file_type)
+    return [format_id for flag, format_id in FORMAT_IDS.items() if value & flag]
+
+
+def resolve_format_id(format_id: str) -> str:
+    """Resolve a format ID or alias to its canonical lowercase format ID."""
+    key = format_id.strip().lower()
+    if key not in FORMAT_ALIASES:
+        raise KeyError(format_id)
+    return FORMAT_ALIASES[key]
