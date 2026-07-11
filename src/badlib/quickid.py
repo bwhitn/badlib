@@ -22,6 +22,9 @@ NSIS_SIGNATURE = b"\xef\xbe\xad\xdeNullsoftInst"
 NSIS_FIRSTHEADER_SIZE = 28
 NSIS_FLAGS_MASK = 0xF
 NSIS_SCAN_ALIGNMENT = 512
+UPX_INFO_MARKER = b"$info: this file is packed with the upx executable packer"
+UPX_MAGIC = b"upx!"
+UPX_SECTION_NAMES = {b"upx0", b"upx1", b"upx2"}
 
 
 @unique
@@ -243,6 +246,7 @@ class Type(IntFlag):
     WMV = auto()  # Windows Media Video
     MSIX = auto()  # MSIX/AppX package
     ZIPX = auto()  # WinZip extended ZIP archive
+    UPX = auto()  # UPX packed executable
 
 
 COMMONTYPE = {
@@ -389,6 +393,7 @@ COMMONTYPE = {
     Type.WMV: "wmv",
     Type.MSIX: "msix",
     Type.ZIPX: "zipx",
+    Type.UPX: "upx",
     Type.BPLS: "Binary Property List",
     Type.IURL: "Internet Shortcut",
     Type.DAA: "PowerISO DAA Disk Image",
@@ -509,6 +514,7 @@ FORMAT_IDS = {
     Type.WMV: "wmv",
     Type.MSIX: "msix",
     Type.ZIPX: "zipx",
+    Type.UPX: "upx",
 }
 
 FORMAT_ALIASES = {
@@ -1021,6 +1027,36 @@ class QuickID:
                 raw_end = max(raw_end, raw_offset + raw_size)
             return raw_end if 0 < raw_end <= total else 0
 
+        def _pe_section_names(pe_offset: int) -> set[bytes]:
+            section_count = _unpack_from("<H", pe_offset + 6)[0]
+            optional_header_size = _unpack_from("<H", pe_offset + 20)[0]
+            section_table = pe_offset + 24 + optional_header_size
+            total = _data_size()
+            names = set()
+            for index in range(section_count):
+                section_offset = section_table + (index * 40)
+                if section_offset + 40 > total:
+                    return names
+                name = bytes(data[section_offset:section_offset + 8]).split(b"\0", 1)[0].lower()
+                if name:
+                    names.add(name)
+            return names
+
+        def _upx_marker_scan(scan: bytes) -> bool:
+            return UPX_INFO_MARKER in scan or (
+                UPX_MAGIC in scan and b"upx0" in scan and b"upx1" in scan
+            )
+
+        def _pe_upx(pe_offset: int, scan: bytes) -> None:
+            section_names = _pe_section_names(pe_offset)
+            upx_section_names = section_names & UPX_SECTION_NAMES
+            if UPX_INFO_MARKER in scan:
+                obj._filetype |= Type.UPX
+                return
+            if UPX_MAGIC in scan and upx_section_names:
+                obj._filetype |= Type.UPX
+                return
+
         def _nsis_candidate(firstheader_offset: int) -> bool:
             total = _data_size()
             if firstheader_offset + NSIS_FIRSTHEADER_SIZE > total:
@@ -1067,6 +1103,7 @@ class QuickID:
 
         def _pe_subtypes(pe_offset: int) -> None:
             scan = _bounded_lower(524288)
+            _pe_upx(pe_offset, scan)
             _mark_installer_strings(scan)
             _nodejs_pkg(scan)
 
@@ -1105,6 +1142,8 @@ class QuickID:
             e_machine = int.from_bytes(data[18:20], endian)
             obj._filetype |= ELF_ARCH_MAP.get(e_machine, 0)
             scan = _bounded_lower(524288)
+            if _upx_marker_scan(scan):
+                obj._filetype |= Type.UPX
             _mark_installer_strings(scan)
             _nodejs_pkg(scan)
 

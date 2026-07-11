@@ -50,6 +50,7 @@ def _minimal_pe(
     machine: int = 0x14C,
     dotnet: bool = False,
     section_payload: bytes = b"",
+    section_name: bytes = b".text",
     overlay: bytes = b"",
 ) -> bytes:
     pe_offset = 0x80
@@ -68,12 +69,40 @@ def _minimal_pe(
     if dotnet:
         clr_directory = pe_offset + 24 + 208
         data[clr_directory:clr_directory + 8] = struct.pack("<II", 0x1000, 0x48)
-    data[section_table:section_table + 8] = b".text\x00\x00\x00"
+    data[section_table:section_table + 8] = section_name[:8].ljust(8, b"\0")
     data[section_table + 16:section_table + 20] = raw_size.to_bytes(4, "little")
     data[section_table + 20:section_table + 24] = raw_offset.to_bytes(4, "little")
     payload = section_payload[:raw_size]
     data[raw_offset:raw_offset + len(payload)] = payload
     return bytes(data) + overlay
+
+
+def _minimal_pe_with_sections(
+    section_names: list[bytes],
+    section_payload: bytes = b"",
+) -> bytes:
+    pe_offset = 0x80
+    optional_header_size = 0xE0
+    section_table = pe_offset + 24 + optional_header_size
+    raw_offset = 0x200
+    raw_size = 0x200
+    data = bytearray(raw_offset + (raw_size * len(section_names)))
+    data[0:2] = b"MZ"
+    data[0x3C:0x40] = pe_offset.to_bytes(4, "little")
+    data[pe_offset:pe_offset + 4] = b"PE\x00\x00"
+    data[pe_offset + 4:pe_offset + 6] = (0x14C).to_bytes(2, "little")
+    data[pe_offset + 6:pe_offset + 8] = len(section_names).to_bytes(2, "little")
+    data[pe_offset + 20:pe_offset + 22] = optional_header_size.to_bytes(2, "little")
+    data[pe_offset + 24:pe_offset + 26] = (0x10B).to_bytes(2, "little")
+    for index, section_name in enumerate(section_names):
+        section = section_table + (index * 40)
+        section_raw_offset = raw_offset + (index * raw_size)
+        data[section:section + 8] = section_name[:8].ljust(8, b"\0")
+        data[section + 16:section + 20] = raw_size.to_bytes(4, "little")
+        data[section + 20:section + 24] = section_raw_offset.to_bytes(4, "little")
+    payload = section_payload[:raw_size]
+    data[raw_offset:raw_offset + len(payload)] = payload
+    return bytes(data)
 
 
 def _minimal_elf(machine: int) -> bytes:
@@ -230,6 +259,21 @@ BYTE_FILETYPE_CASES = [
     ("DOTNET", _minimal_pe(dotnet=True), Type.PE32 | Type.X86 | Type.DOTNET),
     ("NSIS", _minimal_pe(overlay=NSIS_FIRSTHEADER), Type.PE32 | Type.X86 | Type.NSIS),
     (
+        "UPX-PE-info",
+        _minimal_pe(
+            section_payload=(
+                b"$Info: This file is packed with the UPX executable "
+                b"packer"
+            ),
+        ),
+        Type.PE32 | Type.X86 | Type.UPX,
+    ),
+    (
+        "UPX-PE-section-marker",
+        _minimal_pe(section_name=b"UPX1", section_payload=b"\x00UPX!\x00"),
+        Type.PE32 | Type.X86 | Type.UPX,
+    ),
+    (
         "actual-installer",
         _minimal_pe(section_payload=b"Actual Installer package"),
         Type.PE32 | Type.X86 | Type.ACTUAL_INSTALLER,
@@ -297,6 +341,12 @@ BYTE_FILETYPE_CASES = [
     ("ELF-RISCV", _minimal_elf(0xF3), Type.ELF | Type.RISCV),
     ("ELF-CSKY", _minimal_elf(0xFC), Type.ELF | Type.CSKY),
     ("ELF-LOONG", _minimal_elf(0x102), Type.ELF | Type.LOONG),
+    (
+        "UPX-ELF-info",
+        _minimal_elf(0x3E)
+        + b"$Info: This file is packed with the UPX executable packer",
+        Type.ELF | Type.AMD64 | Type.UPX,
+    ),
     ("MACHO-X86", _minimal_macho(0x7), Type.MACHO | Type.X86),
     ("MFAT", b"\xca\xfe\xba\xbe\x00\x00\x00\x01", Type.MACHO | Type.MFAT),
     ("RIFF", b"RIFF" + (b"\x00" * 8), Type.RIFF),
@@ -919,9 +969,26 @@ def test_generic_pe_does_not_match_installer_node_or_sfx() -> None:
         | Type.WIX
         | Type.NODEJS_PKG
         | Type.SFX_PEEXE
+        | Type.UPX
     )
     assert result & Type.PE32
     assert not result & specific
+
+
+def test_upx_magic_string_alone_does_not_match_upx() -> None:
+    result = identify(
+        _minimal_pe(section_payload=b"this executable mentions UPX! but is not packed"),
+    )
+
+    assert result & Type.PE32
+    assert not result & Type.UPX
+
+
+def test_upx_section_names_alone_do_not_match_upx() -> None:
+    result = identify(_minimal_pe_with_sections([b"UPX0", b"UPX1"]))
+
+    assert result & Type.PE32
+    assert not result & Type.UPX
 
 
 def test_random_text_does_not_match_structured_text_formats() -> None:
