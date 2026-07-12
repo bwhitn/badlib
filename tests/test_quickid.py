@@ -113,6 +113,71 @@ def _minimal_elf(machine: int) -> bytes:
     return bytes(data)
 
 
+def _minimal_elf_with_load(
+    *,
+    machine: int,
+    bits: int,
+    endian: str,
+    stub: bytes,
+    stub_delta: int = 0,
+    entry_delta: int = 0,
+    segment_flags: int = 5,
+) -> bytes:
+    endian_flag = 1 if endian == "little" else 2
+    elf_class = 2 if bits == 64 else 1
+    phoff = 0x40 if bits == 64 else 0x34
+    phentsize = 56 if bits == 64 else 32
+    raw_offset = 0x100
+    vaddr = 0x400000
+    segment_size = max(0x200, stub_delta + len(stub), entry_delta + 1)
+    data = bytearray(raw_offset + segment_size)
+
+    def put(offset: int, value: int, size: int) -> None:
+        data[offset:offset + size] = value.to_bytes(size, endian)
+
+    data[0:4] = b"\x7fELF"
+    data[4] = elf_class
+    data[5] = endian_flag
+    data[6] = 1
+    put(16, 2, 2)
+    put(18, machine, 2)
+    put(20, 1, 4)
+
+    entry = vaddr + entry_delta
+    if bits == 64:
+        put(24, entry, 8)
+        put(32, phoff, 8)
+        put(52, 64, 2)
+        put(54, phentsize, 2)
+        put(56, 1, 2)
+        put(phoff, 1, 4)
+        put(phoff + 4, segment_flags, 4)
+        put(phoff + 8, raw_offset, 8)
+        put(phoff + 16, vaddr, 8)
+        put(phoff + 24, vaddr, 8)
+        put(phoff + 32, segment_size, 8)
+        put(phoff + 40, segment_size, 8)
+        put(phoff + 48, 0x1000, 8)
+    else:
+        put(24, entry, 4)
+        put(28, phoff, 4)
+        put(40, 52, 2)
+        put(42, phentsize, 2)
+        put(44, 1, 2)
+        put(phoff, 1, 4)
+        put(phoff + 4, raw_offset, 4)
+        put(phoff + 8, vaddr, 4)
+        put(phoff + 12, vaddr, 4)
+        put(phoff + 16, segment_size, 4)
+        put(phoff + 20, segment_size, 4)
+        put(phoff + 24, segment_flags, 4)
+        put(phoff + 28, 0x1000, 4)
+
+    start = raw_offset + stub_delta
+    data[start:start + len(stub)] = stub
+    return bytes(data)
+
+
 def _minimal_macho(cpu_type: int) -> bytes:
     return b"\xce\xfa\xed\xfe" + cpu_type.to_bytes(4, "little") + (b"\x00" * 20)
 
@@ -956,7 +1021,7 @@ def test_generic_cfb_does_not_match_specific_ole_formats() -> None:
     assert not result & specific
 
 
-def test_generic_pe_does_not_match_installer_node_or_sfx() -> None:
+def test_generic_pe_does_not_match_installer_node_sfx_or_packers() -> None:
     result = identify(_minimal_pe())
 
     specific = (
@@ -970,9 +1035,124 @@ def test_generic_pe_does_not_match_installer_node_or_sfx() -> None:
         | Type.NODEJS_PKG
         | Type.SFX_PEEXE
         | Type.UPX
+        | Type.EVB
+        | Type.ASPACK
+        | Type.FSG
+        | Type.THEMIDA
+        | Type.VMPROTECT
+        | Type.WINUPACK
+        | Type.PETITE
+        | Type.PESPIN
+        | Type.ARMADILLO
+        | Type.PECOMPACT
+        | Type.NSPACK
+        | Type.MPRESS
     )
     assert result & Type.PE32
     assert not result & specific
+
+
+@pytest.mark.parametrize(
+    ("sample", "expected"),
+    [
+        pytest.param(
+            _minimal_pe_with_sections([b".aspack"]),
+            Type.ASPACK,
+            id="aspack-section",
+        ),
+        pytest.param(
+            _minimal_pe(section_payload=b"\x00ASProtect\x00"),
+            Type.ASPACK,
+            id="asprotect-marker",
+        ),
+        pytest.param(
+            _minimal_pe_with_sections([b"FSG!"]),
+            Type.FSG,
+            id="fsg-section",
+        ),
+        pytest.param(
+            _minimal_pe(section_payload=b"\x00Themida\x00"),
+            Type.THEMIDA,
+            id="themida-marker",
+        ),
+        pytest.param(
+            _minimal_pe(section_payload=b"\x00WinLicense\x00"),
+            Type.THEMIDA,
+            id="winlicense-marker",
+        ),
+        pytest.param(
+            _minimal_pe_with_sections([b".vmp0"]),
+            Type.VMPROTECT,
+            id="vmprotect-section",
+        ),
+        pytest.param(
+            _minimal_pe_with_sections([b".wpack"]),
+            Type.WINUPACK,
+            id="winupack-section",
+        ),
+        pytest.param(
+            _minimal_pe_with_sections([b".petite"]),
+            Type.PETITE,
+            id="petite-section",
+        ),
+        pytest.param(
+            _minimal_pe_with_sections([b".pespin"]),
+            Type.PESPIN,
+            id="pespin-section",
+        ),
+        pytest.param(
+            _minimal_pe(section_payload=b"\x00Armadillo\x00"),
+            Type.ARMADILLO,
+            id="armadillo-marker",
+        ),
+        pytest.param(
+            _minimal_pe_with_sections([b"PEC1"]),
+            Type.PECOMPACT,
+            id="pecompact-section",
+        ),
+        pytest.param(
+            _minimal_pe_with_sections([b"NSP0"]),
+            Type.NSPACK,
+            id="nspack-section",
+        ),
+        pytest.param(
+            _minimal_pe_with_sections([b"MPRESS1"]),
+            Type.MPRESS,
+            id="mpress-section",
+        ),
+    ],
+)
+def test_identify_pe_packer_profile_markers(sample: bytes, expected: Type) -> None:
+    result = identify(sample)
+
+    assert result & Type.PE32
+    assert result & expected
+
+
+def test_ambiguous_adata_section_does_not_match_aspack_or_armadillo() -> None:
+    result = identify(_minimal_pe_with_sections([b".adata"]))
+
+    assert result & Type.PE32
+    assert not result & (Type.ASPACK | Type.ARMADILLO)
+
+
+def test_identify_enigma_virtual_box_pe() -> None:
+    result = identify(
+        _minimal_pe_with_sections([b".enigma1", b".enigma2"], section_payload=b"EVB\0"),
+    )
+
+    assert result & Type.PE32
+    assert result & Type.EVB
+
+
+def test_enigma_virtual_box_requires_sections_and_magic() -> None:
+    with_sections = identify(_minimal_pe_with_sections([b".enigma1", b".enigma2"]))
+    with_magic = identify(_minimal_pe(section_payload=b"EVB\0"))
+
+    assert with_sections & Type.PE32
+    assert with_magic & Type.PE32
+    assert not with_sections & Type.EVB
+    assert not with_magic & Type.EVB
 
 
 def test_upx_magic_string_alone_does_not_match_upx() -> None:
@@ -988,6 +1168,170 @@ def test_upx_section_names_alone_do_not_match_upx() -> None:
     result = identify(_minimal_pe_with_sections([b"UPX0", b"UPX1"]))
 
     assert result & Type.PE32
+    assert not result & Type.UPX
+
+
+@pytest.mark.parametrize(
+    ("machine", "bits", "endian", "stub", "expected_arch"),
+    [
+        pytest.param(
+            0x03,
+            32,
+            "little",
+            b"\x50\xe8"
+            + (b"\x00" * 4)
+            + b"\xeb\x0e\x5a\x58\x59\x97\x60\x8a\x54\x24\x20\xe9"
+            + (b"\x00" * 4)
+            + b"\x60",
+            Type.X86,
+            id="x86",
+        ),
+        pytest.param(
+            0x3E,
+            64,
+            "little",
+            b"\x50\x52\xe8"
+            + (b"\x00" * 4)
+            + b"\x55\x53\x51\x52\x48\x01\xfe\x56\x48\x89\xfe\x48\x89\xd7"
+            + b"\x31\xdb\x31\xc9\x48\x83\xcd\xff\xe8",
+            Type.AMD64,
+            id="x86-64",
+        ),
+        pytest.param(
+            0x28,
+            32,
+            "little",
+            b"\x1c\xc0\x4f\xe2\x06\x4c\x9c\xe8\x02\x00\xa0\xe1\x0c\xb0\x8b\xe0"
+            b"\x0c\xa0\x8a\xe0\x00\x30\x9b\xe5\x01\x90\x4c\xe0\x01\x20\xa0\xe1",
+            Type.ARM32,
+            id="arm",
+        ),
+        pytest.param(
+            0x08,
+            32,
+            "little",
+            (b"\x00" * 2)
+            + b"\x11\x04\x00\x00\xfe\x27\xfc\xff\xbd\x27\x00\x00\xbf\xaf"
+            + b"\x20\x28\xa4\x00\x00\x00\xe6\xac\x00\x80\x0d\x3c\x21\x48\xa0\x01"
+            + b"\x01\x00\x0b\x24"
+            + (b"\x00" * 2)
+            + b"\x11\x04",
+            Type.MIPS,
+            id="mips-le",
+        ),
+        pytest.param(
+            0x08,
+            32,
+            "big",
+            b"\x04\x11"
+            + (b"\x00" * 2)
+            + b"\x27\xfe\x00\x00\x27\xbd\xff\xfc\xaf\xbf\x00\x00\x00\xa4"
+            + b"\x28\x20\xac\xe6\x00\x00\x3c\x0d\x80\x00\x01\xa0\x48\x21"
+            + b"\x24\x0b\x00\x01\x04\x11",
+            Type.MIPS,
+            id="mips-be",
+        ),
+        pytest.param(
+            0x14,
+            32,
+            "big",
+            b"\x48\x00\x00\x00\x7c\x00\x29\xec\x7d\xa8\x02\xa6\x28\x07\x00\x02"
+            b"\x40\x82\x00\xe4\x90\xa6\x00\x00",
+            Type.PPC,
+            id="powerpc",
+        ),
+    ],
+)
+def test_identify_upx_elf_entrypoint_stub_patterns(
+    machine: int,
+    bits: int,
+    endian: str,
+    stub: bytes,
+    expected_arch: Type,
+) -> None:
+    result = identify(
+        _minimal_elf_with_load(
+            machine=machine,
+            bits=bits,
+            endian=endian,
+            stub=stub,
+        ),
+    )
+
+    expected = Type.ELF | expected_arch | Type.UPX
+    assert result & expected == expected
+
+
+def test_identify_upx_elf_init_code_not_at_entrypoint() -> None:
+    x86_stub = (
+        b"\x50\xe8"
+        + (b"\x00" * 4)
+        + b"\xeb\x0e\x5a\x58\x59\x97\x60\x8a\x54\x24\x20\xe9"
+        + (b"\x00" * 4)
+        + b"\x60"
+    )
+
+    result = identify(
+        _minimal_elf_with_load(
+            machine=0x03,
+            bits=32,
+            endian="little",
+            stub=x86_stub,
+            stub_delta=0x80,
+            entry_delta=0,
+        ),
+    )
+
+    expected = Type.ELF | Type.X86 | Type.UPX
+    assert result & expected == expected
+
+
+def test_identify_upx_elf_relocated_init_requires_executable_segment() -> None:
+    x86_stub = (
+        b"\x50\xe8"
+        + (b"\x00" * 4)
+        + b"\xeb\x0e\x5a\x58\x59\x97\x60\x8a\x54\x24\x20\xe9"
+        + (b"\x00" * 4)
+        + b"\x60"
+    )
+
+    result = identify(
+        _minimal_elf_with_load(
+            machine=0x03,
+            bits=32,
+            endian="little",
+            stub=x86_stub,
+            stub_delta=0x80,
+            entry_delta=0,
+            segment_flags=4,
+        ),
+    )
+
+    assert result & Type.ELF
+    assert not result & Type.UPX
+
+
+def test_identify_upx_elf_relocated_init_scan_is_capped() -> None:
+    x86_stub = (
+        b"\x50\xe8"
+        + (b"\x00" * 4)
+        + b"\xeb\x0e\x5a\x58\x59\x97\x60\x8a\x54\x24\x20\xe9"
+        + (b"\x00" * 4)
+        + b"\x60"
+    )
+
+    result = identify(
+        _minimal_elf_with_load(
+            machine=0x03,
+            bits=32,
+            endian="little",
+            stub=x86_stub,
+            stub_delta=0x20000,
+            entry_delta=0,
+        ),
+    )
+
+    assert result & Type.ELF
     assert not result & Type.UPX
 
 
@@ -1020,6 +1364,18 @@ def test_identification_cases_cover_every_filetype() -> None:
         Type.XPI,
         Type.ZIPX,
         Type.PYTORCH_MODEL,
+        Type.EVB,
+        Type.ASPACK,
+        Type.FSG,
+        Type.THEMIDA,
+        Type.VMPROTECT,
+        Type.WINUPACK,
+        Type.PETITE,
+        Type.PESPIN,
+        Type.ARMADILLO,
+        Type.PECOMPACT,
+        Type.NSPACK,
+        Type.MPRESS,
     ])
 
     missing = set(Type) - _covered_flags(expected_values)
@@ -1034,13 +1390,22 @@ def test_ooxml_content_type_exports_cover_detector_map() -> None:
 @pytest.mark.parametrize(
     ("alias", "canonical"),
     [
+        ("asprotect", "aspack"),
+        ("enigma-vb", "enigma-virtual-box"),
+        ("evb", "enigma-virtual-box"),
         ("mht", "mhtml"),
         ("mhtml", "mhtml"),
         ("mht/mhtml", "mhtml"),
+        ("pec", "pecompact"),
         ("sfx-peexe", "sfx-peexe"),
         ("sfx/peexe", "sfx-peexe"),
         ("peexe-sfx", "sfx-peexe"),
         ("self-extracting-pe", "sfx-peexe"),
+        ("vmp", "vmprotect"),
+        ("vmprotect64", "vmprotect"),
+        ("winlicense", "themida"),
+        ("winlice", "themida"),
+        ("winupack0", "winupack"),
     ],
 )
 def test_format_id_aliases(alias: str, canonical: str) -> None:

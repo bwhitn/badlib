@@ -25,6 +25,25 @@ NSIS_SCAN_ALIGNMENT = 512
 UPX_INFO_MARKER = b"$info: this file is packed with the upx executable packer"
 UPX_MAGIC = b"upx!"
 UPX_SECTION_NAMES = {b"upx0", b"upx1", b"upx2"}
+ELF_MARKER_SCAN_LIMIT = 524288
+UPX_ELF_EXEC_SEGMENT_SCAN_LIMIT = 131072
+
+# ELF UPX entry stub patterns ported from NozomiNetworks/upx-recovery-tool
+# YARA rules, BSD-3-Clause: https://github.com/NozomiNetworks/upx-recovery-tool
+UPX_ELF_STUB_PATTERNS = (
+    (b"\x50\xe8", 4, b"\xeb\x0e\x5a\x58\x59\x97\x60\x8a\x54\x24\x20\xe9", 4, b"\x60"),
+    (b"\x50\x52\xe8", 4, b"\x55\x53\x51\x52\x48\x01\xfe\x56\x48\x89\xfe\x48\x89\xd7\x31\xdb\x31\xc9\x48\x83\xcd\xff\xe8"),
+    (b"\x50\x52\xe8", 4, b"\x55\x53\x51\x52\x48\x01\xfe\x56\x41\x80\xf8\x0e\x0f", 5, b"\x55\x48\x89\xe5\x44\x8b\x09"),
+    (b"\x1c\xc0\x4f\xe2\x06\x4c\x9c\xe8\x02\x00\xa0\xe1\x0c\xb0\x8b\xe0\x0c\xa0\x8a\xe0\x00\x30\x9b\xe5\x01\x90\x4c\xe0\x01\x20\xa0\xe1",),
+    (b"\x18\xd0\x4d\xe2", 1, b"\x02\x00\xeb\x00\xc0\xdd\xe5\x0e\x00\x5c\xe3", 1, b"\x02\x00\x1a\x0c\x48\x2d\xe9\x00\xb0\xd0\xe5\x06\xcc\xa0\xe3"),
+    (b"\x00\x18\xd0\x4d\xe2\x9c\x00\x00\xeb\x00\x10\x81\xe0\x3e\x40\x2d\xe9\x00\x50\xe0\xe3\x02\x41\xa0\xe3\x19\x00\x00\xea\x1a\x00\xbd",),
+    (b"\x04\x11", 2, b"\x27\xfe\x00\x00\x27\xbd\xff\xfc\xaf\xbf\x00\x00\x00\xa4\x28\x20\xac\xe6\x00\x00\x3c\x0d\x80\x00\x01\xa0\x48\x21\x24\x0b\x00\x01\x04\x11"),
+    (b"\x04\x11", 2, b"\x27\xf7\x00\x00\x90\x99\x00\x00\x24\x01\xfa\x00\x90\x98\x00\x01\x33\x22\x00\x07\x00\x19\xc8\xc2\x03\x21\x08\x04"),
+    (2, b"\x11\x04\x00\x00\xfe\x27\xfc\xff\xbd\x27\x00\x00\xbf\xaf\x20\x28\xa4\x00\x00\x00\xe6\xac\x00\x80\x0d\x3c\x21\x48\xa0\x01\x01\x00\x0b\x24", 2, b"\x11\x04"),
+    (2, b"\x11\x04\x00\x00\xf7\x27\x00\x00\x99\x90\x00\xfa\x01\x24\x01\x00\x98\x90\x07\x00\x22\x33\xc2\xc8\x19\x00\x04\x08\x21\x03"),
+    (b"\x48\x00", 2, b"\x7c\x00\x29\xec\x7d\xa8\x02\xa6\x28\x07\x00\x02\x40\x82\x00\xe4\x90\xa6\x00\x00"),
+    (b"\x48\x00", 2, b"\x28\x07\x00\x0e\x40\x82\x0a\x4c\x94\x21\xff\xe8\x7c\x08\x02\xa6\x7c\xc9\x33\x78\x81\x06\x00\x00\x7c\xa7\x2b\x78"),
+)
 
 
 @unique
@@ -247,6 +266,18 @@ class Type(IntFlag):
     MSIX = auto()  # MSIX/AppX package
     ZIPX = auto()  # WinZip extended ZIP archive
     UPX = auto()  # UPX packed executable
+    EVB = auto()  # Enigma Virtual Box packed executable
+    ASPACK = auto()  # ASPack/ASProtect packed executable
+    FSG = auto()  # FSG packed executable
+    THEMIDA = auto()  # Themida/WinLicense protected executable
+    VMPROTECT = auto()  # VMProtect protected executable
+    WINUPACK = auto()  # WinUpack packed executable
+    PETITE = auto()  # Petite packed executable
+    PESPIN = auto()  # PESpin packed executable
+    ARMADILLO = auto()  # Armadillo protected executable
+    PECOMPACT = auto()  # PECompact packed executable
+    NSPACK = auto()  # NSPack packed executable
+    MPRESS = auto()  # MPRESS packed executable
 
 
 COMMONTYPE = {
@@ -394,6 +425,18 @@ COMMONTYPE = {
     Type.MSIX: "msix",
     Type.ZIPX: "zipx",
     Type.UPX: "upx",
+    Type.EVB: "enigma-virtual-box",
+    Type.ASPACK: "aspack",
+    Type.FSG: "fsg",
+    Type.THEMIDA: "themida",
+    Type.VMPROTECT: "vmprotect",
+    Type.WINUPACK: "winupack",
+    Type.PETITE: "petite",
+    Type.PESPIN: "pespin",
+    Type.ARMADILLO: "armadillo",
+    Type.PECOMPACT: "pecompact",
+    Type.NSPACK: "nspack",
+    Type.MPRESS: "mpress",
     Type.BPLS: "Binary Property List",
     Type.IURL: "Internet Shortcut",
     Type.DAA: "PowerISO DAA Disk Image",
@@ -515,17 +558,38 @@ FORMAT_IDS = {
     Type.MSIX: "msix",
     Type.ZIPX: "zipx",
     Type.UPX: "upx",
+    Type.EVB: "enigma-virtual-box",
+    Type.ASPACK: "aspack",
+    Type.FSG: "fsg",
+    Type.THEMIDA: "themida",
+    Type.VMPROTECT: "vmprotect",
+    Type.WINUPACK: "winupack",
+    Type.PETITE: "petite",
+    Type.PESPIN: "pespin",
+    Type.ARMADILLO: "armadillo",
+    Type.PECOMPACT: "pecompact",
+    Type.NSPACK: "nspack",
+    Type.MPRESS: "mpress",
 }
 
 FORMAT_ALIASES = {
     value: value for value in FORMAT_IDS.values()
 }
 FORMAT_ALIASES.update({
+    "asprotect": "aspack",
+    "enigma-vb": "enigma-virtual-box",
+    "evb": "enigma-virtual-box",
     "mht": "mhtml",
     "mht/mhtml": "mhtml",
+    "pec": "pecompact",
     "sfx/peexe": "sfx-peexe",
     "peexe-sfx": "sfx-peexe",
     "self-extracting-pe": "sfx-peexe",
+    "vmp": "vmprotect",
+    "vmprotect64": "vmprotect",
+    "winlicense": "themida",
+    "winlice": "themida",
+    "winupack0": "winupack",
 })
 
 ODF_MIME_MAP = {
@@ -576,6 +640,75 @@ NODEJS_PKG_MARKERS = (
     b"snapshot_blob.bin",
     b"pkg_snapshot",
     b"nodejs.pkg",
+)
+
+PE_PACKER_RULES = (
+    (
+        Type.ASPACK,
+        (b".aspack",),
+        (),
+        (b"aspack", b"asprotect"),
+    ),
+    (
+        Type.FSG,
+        (b".fsg", b"fsg!", b"fsg"),
+        (),
+        (b"fsg!",),
+    ),
+    (
+        Type.THEMIDA,
+        (b".winlice",),
+        (),
+        (b"themida", b"winlicense", b"winlice"),
+    ),
+    (
+        Type.VMPROTECT,
+        (),
+        (b".vmp", b"vmp"),
+        (b"vmprotect", b"vmprotect64"),
+    ),
+    (
+        Type.WINUPACK,
+        (b".wup", b".wpack"),
+        (),
+        (b"winupack",),
+    ),
+    (
+        Type.PETITE,
+        (b".petite", b"petite"),
+        (),
+        (),
+    ),
+    (
+        Type.PESPIN,
+        (b".pespin", b"pespin"),
+        (),
+        (b"pespin",),
+    ),
+    (
+        Type.ARMADILLO,
+        (),
+        (),
+        (b"armadillo",),
+    ),
+    (
+        Type.PECOMPACT,
+        (b".pec", b"pec1", b"pec2"),
+        (),
+        (b"pecompact",),
+    ),
+    (
+        Type.NSPACK,
+        (b".nsp", b"nsp0", b"nsp1"),
+        (),
+        (b"nspack",),
+    ),
+    (
+        Type.MPRESS,
+        (b".mpress", b"mpress1", b"mpress2"),
+        (),
+        (b"mpress",),
+    ),
 )
 
 
@@ -995,6 +1128,73 @@ class QuickID:
         def _bounded_lower(limit: int = 262144, start: int = 0) -> bytes:
             return _bounded_bytes(limit=limit, start=start).lower()
 
+        def _read_uint(offset: int, size: int, endian: str) -> int | None:
+            if offset < 0 or offset + size > _data_size():
+                return None
+            return int.from_bytes(data[offset:offset + size], endian)
+
+        def _pattern_length(pattern: tuple[bytes | int, ...]) -> int:
+            return sum(part if isinstance(part, int) else len(part) for part in pattern)
+
+        def _pattern_fixed_segment(pattern: tuple[bytes | int, ...]) -> tuple[int, bytes] | None:
+            offset = 0
+            for part in pattern:
+                if isinstance(part, int):
+                    offset += part
+                    continue
+                if part:
+                    return offset, part
+            return None
+
+        def _pattern_matches_at(pattern: tuple[bytes | int, ...], offset: int) -> bool:
+            if offset < 0:
+                return False
+            total = _data_size()
+            pos = offset
+            for part in pattern:
+                if isinstance(part, int):
+                    pos += part
+                    if pos > total:
+                        return False
+                    continue
+                end = pos + len(part)
+                if end > total or data[pos:end] != part:
+                    return False
+                pos = end
+            return True
+
+        def _find_pattern(
+            pattern: tuple[bytes | int, ...],
+            start: int,
+            end: int,
+        ) -> int:
+            total_size = _data_size()
+            start = max(start, 0)
+            end = min(end, total_size)
+            pattern_len = _pattern_length(pattern)
+            if pattern_len <= 0 or pattern_len > end - start:
+                return -1
+            segment = _pattern_fixed_segment(pattern)
+            last_start = end - pattern_len
+            if segment is None:
+                for offset in range(start, last_start + 1):
+                    if _pattern_matches_at(pattern, offset):
+                        return offset
+                return -1
+
+            segment_offset, fixed_segment = segment
+            search_pos = start + segment_offset
+            search_end = last_start + segment_offset + len(fixed_segment)
+            while search_pos < search_end:
+                hit = data.find(fixed_segment, search_pos, search_end)
+                if hit == -1:
+                    return -1
+                candidate = hit - segment_offset
+                if candidate >= 0 and _pattern_matches_at(pattern, candidate):
+                    return candidate
+                search_pos = hit + 1
+            return -1
+
         def _zip_read_small(zf: Any, name: str, limit: int = 65536) -> bytes:
             try:
                 info = zf.getinfo(name)
@@ -1047,6 +1247,164 @@ class QuickID:
                 UPX_MAGIC in scan and b"upx0" in scan and b"upx1" in scan
             )
 
+        def _elf_layout() -> tuple[str, int, int, int, int, int, int, int, int, int, int, int] | None:
+            total = _data_size()
+            if total < 0x34:
+                return None
+
+            elf_class = data[4]
+            endian_flag = data[5]
+            if endian_flag == 1:
+                endian = "little"
+            elif endian_flag == 2:
+                endian = "big"
+            else:
+                return None
+
+            if elf_class == 1:
+                entry = _read_uint(0x18, 4, endian)
+                phoff = _read_uint(0x1C, 4, endian)
+                phentsize = _read_uint(0x2A, 2, endian)
+                phnum = _read_uint(0x2C, 2, endian)
+                ph_type_offset = 0
+                ph_flags_offset = 24
+                ph_offset_offset = 4
+                ph_vaddr_offset = 8
+                ph_filesz_offset = 16
+                ph_min_size = 32
+                word_size = 4
+            elif elf_class == 2:
+                if total < 0x40:
+                    return None
+                entry = _read_uint(0x18, 8, endian)
+                phoff = _read_uint(0x20, 8, endian)
+                phentsize = _read_uint(0x36, 2, endian)
+                phnum = _read_uint(0x38, 2, endian)
+                ph_type_offset = 0
+                ph_flags_offset = 4
+                ph_offset_offset = 8
+                ph_vaddr_offset = 16
+                ph_filesz_offset = 32
+                ph_min_size = 56
+                word_size = 8
+            else:
+                return None
+
+            if entry is None or phoff is None or phentsize is None or phnum is None:
+                return None
+            return (
+                endian,
+                entry,
+                phoff,
+                phentsize,
+                phnum,
+                ph_type_offset,
+                ph_flags_offset,
+                ph_offset_offset,
+                ph_vaddr_offset,
+                ph_filesz_offset,
+                ph_min_size,
+                word_size,
+            )
+
+        def _elf_entry_file_offset() -> int | None:
+            total = _data_size()
+            layout = _elf_layout()
+            if layout is None:
+                return None
+            (
+                endian,
+                entry,
+                phoff,
+                phentsize,
+                phnum,
+                ph_type_offset,
+                _ph_flags_offset,
+                ph_offset_offset,
+                ph_vaddr_offset,
+                ph_filesz_offset,
+                ph_min_size,
+                word_size,
+            ) = layout
+
+            if phoff <= 0 or phentsize < ph_min_size:
+                return entry if 0 <= entry < total else None
+
+            for index in range(min(phnum, 256)):
+                ph = phoff + (index * phentsize)
+                if ph < 0 or ph + ph_min_size > total:
+                    break
+                ph_type = _read_uint(ph + ph_type_offset, 4, endian)
+                if ph_type != 1:
+                    continue
+                file_offset = _read_uint(ph + ph_offset_offset, word_size, endian)
+                vaddr = _read_uint(ph + ph_vaddr_offset, word_size, endian)
+                filesz = _read_uint(ph + ph_filesz_offset, word_size, endian)
+                if file_offset is None or vaddr is None or filesz is None:
+                    continue
+                if filesz == 0 or not (vaddr <= entry < vaddr + filesz):
+                    continue
+                mapped = file_offset + (entry - vaddr)
+                if 0 <= mapped < total:
+                    return mapped
+
+            return entry if 0 <= entry < total else None
+
+        def _elf_executable_file_ranges() -> list[tuple[int, int]]:
+            total = _data_size()
+            layout = _elf_layout()
+            if layout is None:
+                return []
+            (
+                endian,
+                _entry,
+                phoff,
+                phentsize,
+                phnum,
+                ph_type_offset,
+                ph_flags_offset,
+                ph_offset_offset,
+                _ph_vaddr_offset,
+                ph_filesz_offset,
+                ph_min_size,
+                word_size,
+            ) = layout
+            if phoff <= 0 or phentsize < ph_min_size:
+                return []
+
+            ranges = []
+            for index in range(min(phnum, 256)):
+                ph = phoff + (index * phentsize)
+                if ph < 0 or ph + ph_min_size > total:
+                    break
+                ph_type = _read_uint(ph + ph_type_offset, 4, endian)
+                flags = _read_uint(ph + ph_flags_offset, 4, endian)
+                if ph_type != 1 or flags is None or not (flags & 0x1):
+                    continue
+                file_offset = _read_uint(ph + ph_offset_offset, word_size, endian)
+                filesz = _read_uint(ph + ph_filesz_offset, word_size, endian)
+                if file_offset is None or filesz is None or filesz == 0:
+                    continue
+                start = file_offset
+                end = min(file_offset + filesz, start + UPX_ELF_EXEC_SEGMENT_SCAN_LIMIT, total)
+                if start < end:
+                    ranges.append((start, end))
+            return ranges
+
+        def _elf_upx_stub() -> bool:
+            entry_offset = _elf_entry_file_offset()
+            if entry_offset is not None:
+                for pattern in UPX_ELF_STUB_PATTERNS:
+                    if _pattern_matches_at(pattern, entry_offset):
+                        return True
+
+            for start, end in _elf_executable_file_ranges():
+                for pattern in UPX_ELF_STUB_PATTERNS:
+                    hit = _find_pattern(pattern, start, end)
+                    if hit != -1 and hit != entry_offset:
+                        return True
+            return False
+
         def _pe_upx(pe_offset: int, scan: bytes) -> None:
             section_names = _pe_section_names(pe_offset)
             upx_section_names = section_names & UPX_SECTION_NAMES
@@ -1056,6 +1414,27 @@ class QuickID:
             if UPX_MAGIC in scan and upx_section_names:
                 obj._filetype |= Type.UPX
                 return
+
+        def _pe_packer_markers(pe_offset: int, scan: bytes) -> None:
+            section_names = _pe_section_names(pe_offset)
+            for packer_type, exact_sections, section_prefixes, markers in PE_PACKER_RULES:
+                if any(section in section_names for section in exact_sections):
+                    obj._filetype |= packer_type
+                    continue
+                if any(
+                    section_name.startswith(prefix)
+                    for prefix in section_prefixes
+                    for section_name in section_names
+                ):
+                    obj._filetype |= packer_type
+                    continue
+                if any(marker in scan for marker in markers):
+                    obj._filetype |= packer_type
+
+        def _pe_enigma_virtual_box(pe_offset: int, scan: bytes) -> None:
+            section_names = _pe_section_names(pe_offset)
+            if {b".enigma1", b".enigma2"} <= section_names and b"evb\x00" in scan:
+                obj._filetype |= Type.EVB
 
         def _nsis_candidate(firstheader_offset: int) -> bool:
             total = _data_size()
@@ -1104,6 +1483,8 @@ class QuickID:
         def _pe_subtypes(pe_offset: int) -> None:
             scan = _bounded_lower(524288)
             _pe_upx(pe_offset, scan)
+            _pe_enigma_virtual_box(pe_offset, scan)
+            _pe_packer_markers(pe_offset, scan)
             _mark_installer_strings(scan)
             _nodejs_pkg(scan)
 
@@ -1141,8 +1522,8 @@ class QuickID:
             endian = "little" if endian_flag == 1 else "big"
             e_machine = int.from_bytes(data[18:20], endian)
             obj._filetype |= ELF_ARCH_MAP.get(e_machine, 0)
-            scan = _bounded_lower(524288)
-            if _upx_marker_scan(scan):
+            scan = _bounded_lower(ELF_MARKER_SCAN_LIMIT)
+            if _upx_marker_scan(scan) or _elf_upx_stub():
                 obj._filetype |= Type.UPX
             _mark_installer_strings(scan)
             _nodejs_pkg(scan)
