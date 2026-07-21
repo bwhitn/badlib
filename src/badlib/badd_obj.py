@@ -1,6 +1,7 @@
 import hashlib
 import inspect
 import lzma
+import math
 from collections import OrderedDict
 from dataclasses import dataclass
 from mmap import ACCESS_READ, mmap
@@ -104,33 +105,97 @@ is_trans_obj = is_badd_obj
 
 
 class CompressReader:
+    DEFAULT_MAX_OUTPUT_SIZE = 256 * 1024 * 1024
+    DEFAULT_MAX_BLOCKS = 128
+    DEFAULT_MAX_COMPRESSION_RATIO = 100_000.0
+
     def __init__(self, file: str, decompress: Optional[Callable[..., bytes]] = None,
-                 cache_blocks: int = 4, verify: bool = False):
+                 cache_blocks: int = 4, verify: bool = False,
+                 max_output_size: Optional[int] = DEFAULT_MAX_OUTPUT_SIZE,
+                 max_blocks: Optional[int] = DEFAULT_MAX_BLOCKS,
+                 max_compression_ratio: Optional[float] = DEFAULT_MAX_COMPRESSION_RATIO):
         self.file = str(file)
         self._codec = _TransCodec(decompress=decompress)
-        self._fh = open(self.file, "rb")
-        self._mh = mmap(self._fh.fileno(), 0, access=ACCESS_READ)
-        self._size, self._sha256, self._footer_offset = self._codec.parse_footer(self._mh)
-        self._compressed = self._size > self._codec.SMALL_LIMIT
-        self._blocks: list[_Block] = []
-        self._blocks_ready = False
-        self._block_cache = OrderedDict()
-        self._cache_blocks = max(0, int(cache_blocks))
-        self._full_data: Optional[bytes] = None
-        self._tail_offset: Optional[int] = None
-        self._middle_len: int = 0
-        if self._compressed:
-            if self._size <= (self._codec.HEAD_SIZE + self._codec.TAIL_SIZE):
-                raise ValueError("Invalid uncompressed size for compressed file")
-            self._tail_offset = self._footer_offset - self._codec.TAIL_SIZE
-            if self._tail_offset < self._codec.HEAD_SIZE:
-                raise ValueError("Invalid layout for compressed file")
-            self._middle_len = self._size - self._codec.HEAD_SIZE - self._codec.TAIL_SIZE
-        else:
-            if self._footer_offset != self._size:
+        self._fh = None
+        self._mh = None
+        self._max_output_size = self._validate_int_limit(
+            max_output_size, "max_output_size"
+        )
+        self._max_blocks = self._validate_int_limit(max_blocks, "max_blocks")
+        self._max_compression_ratio = self._validate_ratio_limit(
+            max_compression_ratio
+        )
+        try:
+            self._fh = open(self.file, "rb")
+            self._mh = mmap(self._fh.fileno(), 0, access=ACCESS_READ)
+            self._size, self._sha256, self._footer_offset = self._codec.parse_footer(self._mh)
+            self._validate_declared_limits()
+            self._compressed = self._size > self._codec.SMALL_LIMIT
+            self._blocks: list[_Block] = []
+            self._blocks_ready = False
+            self._block_cache = OrderedDict()
+            self._cache_blocks = max(0, int(cache_blocks))
+            self._full_data: Optional[bytes] = None
+            self._tail_offset: Optional[int] = None
+            self._middle_len: int = 0
+            self._expected_blocks: int = 0
+            if self._compressed:
+                if self._size <= (self._codec.HEAD_SIZE + self._codec.TAIL_SIZE):
+                    raise ValueError("Invalid uncompressed size for compressed file")
+                self._tail_offset = self._footer_offset - self._codec.TAIL_SIZE
+                if self._tail_offset < self._codec.HEAD_SIZE:
+                    raise ValueError("Invalid layout for compressed file")
+                self._middle_len = self._size - self._codec.HEAD_SIZE - self._codec.TAIL_SIZE
+                self._expected_blocks = (
+                    self._middle_len + self._codec.BLOCK_SIZE - 1
+                ) // self._codec.BLOCK_SIZE
+                if self._max_blocks is not None and self._expected_blocks > self._max_blocks:
+                    raise ValueError(
+                        f"Declared block count exceeds max_blocks "
+                        f"({self._expected_blocks} > {self._max_blocks})"
+                    )
+            elif self._footer_offset != self._size:
                 raise ValueError("Unexpected data length for uncompressed file")
-        if verify:
-            self.verify(raise_on_fail=True)
+            if verify:
+                self.verify(raise_on_fail=True)
+        except BaseException:
+            self.close()
+            raise
+
+    @staticmethod
+    def _validate_int_limit(value: Optional[int], name: str) -> Optional[int]:
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError(f"{name} must be an int or None")
+        if value < 0:
+            raise ValueError(f"{name} must be non-negative")
+        return value
+
+    @staticmethod
+    def _validate_ratio_limit(value: Optional[float]) -> Optional[float]:
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError("max_compression_ratio must be a number or None")
+        ratio = float(value)
+        if not math.isfinite(ratio) or ratio <= 0:
+            raise ValueError("max_compression_ratio must be finite and positive")
+        return ratio
+
+    def _validate_declared_limits(self) -> None:
+        if self._max_output_size is not None and self._size > self._max_output_size:
+            raise ValueError(
+                f"Declared output size exceeds max_output_size "
+                f"({self._size} > {self._max_output_size})"
+            )
+        if self._max_compression_ratio is not None and self._size:
+            ratio = self._size / max(1, self._footer_offset)
+            if ratio > self._max_compression_ratio:
+                raise ValueError(
+                    f"Declared compression ratio exceeds max_compression_ratio "
+                    f"({ratio:.2f} > {self._max_compression_ratio:.2f})"
+                )
 
     def _build_blocks(self) -> None:
         if self._blocks_ready:
@@ -139,7 +204,10 @@ class CompressReader:
         offset = self._codec.HEAD_SIZE
         remaining = self._middle_len
         u_offset = 0
+        blocks: list[_Block] = []
         while offset < comp_end and remaining > 0:
+            if self._max_blocks is not None and len(blocks) >= self._max_blocks:
+                raise ValueError("Compressed block count exceeds max_blocks")
             if offset + 3 > comp_end:
                 raise ValueError("Truncated compressed block header")
             comp_len = int.from_bytes(self._mh[offset:offset + 3], byteorder="little")
@@ -149,7 +217,7 @@ class CompressReader:
             if offset + comp_len > comp_end:
                 raise ValueError("Truncated compressed block data")
             u_size = min(self._codec.BLOCK_SIZE, remaining)
-            self._blocks.append(_Block(offset, comp_len, u_offset, u_size))
+            blocks.append(_Block(offset, comp_len, u_offset, u_size))
             offset += comp_len
             u_offset += u_size
             remaining -= u_size
@@ -157,6 +225,9 @@ class CompressReader:
             raise ValueError("Compressed blocks do not match expected size")
         if offset != comp_end:
             raise ValueError("Unexpected trailing compressed data")
+        if len(blocks) != self._expected_blocks:
+            raise ValueError("Compressed block count does not match expected size")
+        self._blocks = blocks
         self._blocks_ready = True
 
     def __enter__(self):
@@ -278,6 +349,7 @@ class CompressReader:
                 self._full_data = self._codec.xor(self._mh[:self._size])
                 data = self._full_data
             else:
+                self._build_blocks()
                 out = bytearray(self._size)
                 out[:self._codec.HEAD_SIZE] = self._codec.xor(self._mh[:self._codec.HEAD_SIZE])
                 tail_start = self._tail_offset
@@ -447,11 +519,16 @@ class CompressObj:
                  compress: Optional[Callable[[bytes], bytes]] = None,
                  decompress: Optional[Callable[..., bytes]] = None,
                  cache_blocks: int = 4,
-                 verify: bool = False):
+                 verify: bool = False,
+                 max_output_size: Optional[int] = CompressReader.DEFAULT_MAX_OUTPUT_SIZE,
+                 max_blocks: Optional[int] = CompressReader.DEFAULT_MAX_BLOCKS,
+                 max_compression_ratio: Optional[float] = CompressReader.DEFAULT_MAX_COMPRESSION_RATIO):
         self.mode = mode
         if mode == "rb":
             self._impl = CompressReader(file=file, decompress=decompress, cache_blocks=cache_blocks,
-                                        verify=verify)
+                                        verify=verify, max_output_size=max_output_size,
+                                        max_blocks=max_blocks,
+                                        max_compression_ratio=max_compression_ratio)
         elif mode == "wb":
             self._impl = CompressWriter(file=file, compress=compress)
         else:

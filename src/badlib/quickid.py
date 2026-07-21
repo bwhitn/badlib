@@ -27,6 +27,7 @@ UPX_MAGIC = b"upx!"
 UPX_SECTION_NAMES = {b"upx0", b"upx1", b"upx2"}
 ELF_MARKER_SCAN_LIMIT = 524288
 UPX_ELF_EXEC_SEGMENT_SCAN_LIMIT = 131072
+RTF_MARKER_SCAN_LIMIT = 262144
 
 # ELF UPX entry stub patterns ported from NozomiNetworks/upx-recovery-tool
 # YARA rules, BSD-3-Clause: https://github.com/NozomiNetworks/upx-recovery-tool
@@ -1924,7 +1925,7 @@ class QuickID:
                 obj._filetype |= Type.TORR
 
         def _rtf_markers():
-            scan = bytes(data).lower()
+            scan = _bounded_lower(RTF_MARKER_SCAN_LIMIT)
             if b'\\object' in scan or b'\\objdata' in scan or b'\\objclass' in scan or b'\\objupdate' in scan \
                     or b'\\objautlink' in scan:
                 obj._filetype |= Type.ROBJ

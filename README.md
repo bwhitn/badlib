@@ -88,6 +88,27 @@ with CompressReader(path, verify=True) as reader:
     sha256_hex = reader.sha256_hex
 ```
 
+Readers reject unsafe declared resources before allocating full output. The
+defaults allow at most 256 MiB of output, 128 compressed blocks, and a declared
+output-to-container-payload ratio of 100,000:1. Applications can set tighter
+limits for their worker budget:
+
+```python
+with CompressReader(
+    path,
+    verify=True,
+    max_output_size=64 * 1024 * 1024,
+    max_blocks=32,
+    max_compression_ratio=10_000,
+) as reader:
+    original = reader.read()
+```
+
+Passing `None` disables an individual limit and should be reserved for callers
+that enforce equivalent bounds in an independently contained worker. Layout
+validation always completes before a full-output allocation. `verify=True`
+additionally compares the decompressed bytes with the footer SHA-256.
+
 `CompressObj` is also available as a compatibility wrapper for `rb` and `wb`
 modes.
 
@@ -160,6 +181,8 @@ currently has a proprietary license file.
 ## Safety Notes
 
 - Treat all stored files as hostile.
+- RTF marker identification scans only the first 256 KiB instead of
+  materializing the complete input.
 - Do not extract samples onto shared or production systems.
 - Keep sample storage directories isolated from normal user files.
 - Use dedicated analysis infrastructure when handling live malware.
