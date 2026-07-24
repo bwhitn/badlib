@@ -1425,6 +1425,49 @@ def test_identify_bytes() -> None:
     assert "ZIP Compressed Archive" in type_names(result)
 
 
+@pytest.mark.parametrize(
+    ("name", "data", "expected"),
+    [
+        ("pe", b"MZ", Type.UNK),
+        ("elf", b"\x7fELF", Type.ELF),
+        ("macho", b"\xce\xfa\xed\xfe", Type.MACHO),
+    ],
+)
+def test_identify_truncated_executable_header(
+    tmp_path: Path,
+    name: str,
+    data: bytes,
+    expected: Type,
+) -> None:
+    path = tmp_path / name
+    path.write_bytes(data)
+
+    assert identify(data) == expected
+    assert identify_path(path) == expected
+
+
+def test_identify_truncated_pe_keeps_established_type() -> None:
+    pe_offset = 0x40
+    data = bytearray(pe_offset + 26)
+    data[0:2] = b"MZ"
+    data[0x3C:0x40] = pe_offset.to_bytes(4, "little")
+    data[pe_offset:pe_offset + 4] = b"PE\x00\x00"
+    data[pe_offset + 4:pe_offset + 6] = (0x14C).to_bytes(2, "little")
+    data[pe_offset + 24:pe_offset + 26] = (0x10B).to_bytes(2, "little")
+
+    assert identify(bytes(data)) == Type.PE32 | Type.X86
+
+
+@pytest.mark.parametrize(
+    "data",
+    [_minimal_pe(), _minimal_elf(0x3E), _minimal_macho(0x7)],
+    ids=["pe", "elf", "macho"],
+)
+def test_identify_executable_prefixes_do_not_raise(data: bytes) -> None:
+    for length in range(len(data) + 1):
+        identify(data[:length])
+
+
 def test_identify_path(tmp_path: Path) -> None:
     path = tmp_path / "sample.gz"
     path.write_bytes(b"\x1f\x8b\x08\x00" + (b"\x00" * 32))

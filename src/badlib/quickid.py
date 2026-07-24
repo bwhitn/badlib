@@ -1093,6 +1093,10 @@ class QuickID:
         def _data_size() -> int:
             return data.size() if hasattr(data, "size") else len(data)
 
+        def _has_bytes(offset: int, size: int) -> bool:
+            total = _data_size()
+            return offset >= 0 and size >= 0 and offset <= total - size
+
         def _unpack_from(fmt: str, offset: int):
             size = struct.calcsize(fmt)
             if offset < 0:
@@ -1505,22 +1509,34 @@ class QuickID:
                 obj._filetype |= Type.SFX_PEEXE
 
         def _pe():
+            if not _has_bytes(0x3C, 4):
+                return
             pe_offset = _unpack_from("<I", 0x3C)[0]
-            if data[pe_offset: pe_offset + 4] == b"PE\0\0":
-                optional_header_magic = _unpack_from("<H", pe_offset + 0x18)[0]
-                if optional_header_magic == 0x10b or optional_header_magic == 0x20b:
-                    obj._filetype |= Type.PE32
-                    obj._filetype |= PE_ARCH_MAP.get(_unpack_from("<H", pe_offset + 4)[0], 0)
-                    clr_rt_hdr_offset = (208 if optional_header_magic == 0x10b else 224) + pe_offset + 24
+            if not _has_bytes(pe_offset, 4):
+                return
+            if data[pe_offset: pe_offset + 4] != b"PE\0\0":
+                return
+            if not _has_bytes(pe_offset + 4, 2) or not _has_bytes(pe_offset + 0x18, 2):
+                return
+            optional_header_magic = _unpack_from("<H", pe_offset + 0x18)[0]
+            if optional_header_magic == 0x10b or optional_header_magic == 0x20b:
+                obj._filetype |= Type.PE32
+                obj._filetype |= PE_ARCH_MAP.get(_unpack_from("<H", pe_offset + 4)[0], 0)
+                clr_rt_hdr_offset = (208 if optional_header_magic == 0x10b else 224) + pe_offset + 24
+                if _has_bytes(clr_rt_hdr_offset, 8):
                     clr_rva, clr_size = _unpack_from("<II", clr_rt_hdr_offset)
                     if not (clr_rva == 0 or clr_size == 0):
                         obj._filetype |= Type.DOTNET
-                    _nsis(pe_offset)
-                    _pe_subtypes(pe_offset)
+                _nsis(pe_offset)
+                _pe_subtypes(pe_offset)
 
         def _elf():
+            if not _has_bytes(5, 1):
+                return
             endian_flag = data[5]
             endian = "little" if endian_flag == 1 else "big"
+            if not _has_bytes(18, 2):
+                return
             e_machine = int.from_bytes(data[18:20], endian)
             obj._filetype |= ELF_ARCH_MAP.get(e_machine, 0)
             scan = _bounded_lower(ELF_MARKER_SCAN_LIMIT)
@@ -1530,6 +1546,8 @@ class QuickID:
             _nodejs_pkg(scan)
 
         def _macho():
+            if not _has_bytes(4, 4):
+                return
             obj._filetype |= MACHO_ARCH_MAP.get(_unpack_from("<I", 4)[0], 0)
             scan = _bounded_lower(524288)
             _mark_installer_strings(scan)
