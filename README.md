@@ -149,7 +149,11 @@ names, or stable container markers:
 - CFB/OLE subtypes: `hwp`, `pub`, `doc95`, `dot95`, `xls95`, `ppt95`, `msc`,
   `mso`.
 - Binary/media/data formats: `h5`, `dwg`, `asf`, `wmv`, `msu`.
-- Structured text formats: `csv`, `ics`, `mbox`, `rdp`, `mhtml`, `sct`.
+- Structured text formats: `csv`, `ics`, `mbox`, `rdp`, `mhtml`, `sct`, `har`.
+
+HAR identification is content-only. It validates the HTTP Archive JSON shape
+(`log.version`, `log.creator`, and `log.entries`) and, for non-empty archives,
+the first entry's timing and request fields. The filename extension is ignored.
 
 Heuristic IDs require stronger marker combinations and may depend on bounded
 string windows or path hints:

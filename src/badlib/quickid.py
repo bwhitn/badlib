@@ -1,3 +1,4 @@
+import json
 import struct
 from enum import IntFlag, auto, unique
 from mmap import ACCESS_READ, mmap
@@ -28,6 +29,375 @@ UPX_SECTION_NAMES = {b"upx0", b"upx1", b"upx2"}
 ELF_MARKER_SCAN_LIMIT = 524288
 UPX_ELF_EXEC_SEGMENT_SCAN_LIMIT = 131072
 RTF_MARKER_SCAN_LIMIT = 262144
+HAR_SCAN_LIMIT = 4 * 1024 * 1024
+HAR_JSON_MAX_DEPTH = 64
+
+
+class _HarScanError(ValueError):
+    pass
+
+
+class _HarJsonScanner:
+    """Recognize HAR structure without materializing a complete JSON document."""
+
+    _WHITESPACE = (0x20, 0x09, 0x0A, 0x0D)
+
+    def __init__(self, data: Any, size: int):
+        self._data = data
+        self._total = size
+        self._end = min(size, HAR_SCAN_LIMIT)
+        self._offset = 0
+
+    def matches(self) -> bool:
+        try:
+            if self._end >= 3 and self._data[:3] == b"\xef\xbb\xbf":
+                self._offset = 3
+            self._skip_whitespace()
+            return self._root_object()
+        except (_HarScanError, UnicodeDecodeError, json.JSONDecodeError):
+            return False
+
+    def _peek(self) -> int:
+        if self._offset >= self._end:
+            raise _HarScanError("HAR scan limit reached")
+        return self._data[self._offset]
+
+    def _skip_whitespace(self) -> None:
+        while self._offset < self._end and self._data[self._offset] in self._WHITESPACE:
+            self._offset += 1
+
+    def _expect(self, value: int) -> None:
+        self._skip_whitespace()
+        if self._peek() != value:
+            raise _HarScanError("Unexpected JSON token")
+        self._offset += 1
+
+    def _end_object_member(self) -> bool:
+        self._skip_whitespace()
+        token = self._peek()
+        if token == 0x7D:  # }
+            self._offset += 1
+            return True
+        if token != 0x2C:  # ,
+            raise _HarScanError("Invalid JSON object")
+        self._offset += 1
+        return False
+
+    def _read_string(self, capture_limit: int = 256) -> tuple[str | None, bool]:
+        self._skip_whitespace()
+        if self._peek() != 0x22:
+            raise _HarScanError("Expected JSON string")
+        start = self._offset
+        self._offset += 1
+        search_from = self._offset
+        while search_from < self._end:
+            quote = self._data.find(b'"', search_from, self._end)
+            if quote == -1:
+                break
+            backslashes = 0
+            preceding = quote - 1
+            while preceding > start and self._data[preceding] == 0x5C:
+                backslashes += 1
+                preceding -= 1
+            if backslashes % 2:
+                search_from = quote + 1
+                continue
+            self._offset = quote + 1
+            raw_length = self._offset - start
+            nonempty = quote > start + 1
+            if raw_length > capture_limit:
+                return None, nonempty
+            decoded = json.loads(bytes(self._data[start:self._offset]))
+            if not isinstance(decoded, str):
+                raise _HarScanError("Invalid JSON string")
+            return decoded, nonempty
+        raise _HarScanError("Unterminated JSON string")
+
+    def _skip_number(self) -> None:
+        self._skip_whitespace()
+        if self._peek() == 0x2D:  # -
+            self._offset += 1
+        if self._offset >= self._end:
+            raise _HarScanError("Incomplete JSON number")
+        first = self._data[self._offset]
+        if first == 0x30:
+            self._offset += 1
+            if self._offset < self._end and 0x30 <= self._data[self._offset] <= 0x39:
+                raise _HarScanError("Leading zero in JSON number")
+        elif 0x31 <= first <= 0x39:
+            self._offset += 1
+            while self._offset < self._end and 0x30 <= self._data[self._offset] <= 0x39:
+                self._offset += 1
+        else:
+            raise _HarScanError("Invalid JSON number")
+        if self._offset < self._end and self._data[self._offset] == 0x2E:  # .
+            self._offset += 1
+            if self._offset >= self._end or not 0x30 <= self._data[self._offset] <= 0x39:
+                raise _HarScanError("Invalid JSON fraction")
+            while self._offset < self._end and 0x30 <= self._data[self._offset] <= 0x39:
+                self._offset += 1
+        if self._offset < self._end and self._data[self._offset] in (0x65, 0x45):  # e/E
+            self._offset += 1
+            if self._offset < self._end and self._data[self._offset] in (0x2B, 0x2D):
+                self._offset += 1
+            if self._offset >= self._end or not 0x30 <= self._data[self._offset] <= 0x39:
+                raise _HarScanError("Invalid JSON exponent")
+            while self._offset < self._end and 0x30 <= self._data[self._offset] <= 0x39:
+                self._offset += 1
+        if self._offset == self._end and self._end < self._total:
+            raise _HarScanError("JSON number crosses HAR scan limit")
+
+    def _skip_value(self, depth: int = 0) -> None:
+        if depth > HAR_JSON_MAX_DEPTH:
+            raise _HarScanError("JSON nesting is too deep")
+        self._skip_whitespace()
+        token = self._peek()
+        if token == 0x22:
+            self._read_string(capture_limit=0)
+            return
+        if token == 0x7B:  # {
+            self._skip_object(depth + 1)
+            return
+        if token == 0x5B:  # [
+            self._skip_array(depth + 1)
+            return
+        if token == 0x2D or 0x30 <= token <= 0x39:
+            self._skip_number()
+            return
+        for literal in (b"true", b"false", b"null"):
+            end = self._offset + len(literal)
+            if end <= self._end and self._data[self._offset:end] == literal:
+                self._offset = end
+                return
+        raise _HarScanError("Invalid JSON value")
+
+    def _skip_object(self, depth: int) -> None:
+        self._expect(0x7B)
+        self._skip_whitespace()
+        if self._peek() == 0x7D:
+            self._offset += 1
+            return
+        while True:
+            self._read_string()
+            self._expect(0x3A)  # :
+            self._skip_value(depth)
+            if self._end_object_member():
+                return
+
+    def _skip_array(self, depth: int) -> None:
+        self._expect(0x5B)
+        self._skip_whitespace()
+        if self._peek() == 0x5D:
+            self._offset += 1
+            return
+        while True:
+            self._skip_value(depth)
+            self._skip_whitespace()
+            token = self._peek()
+            if token == 0x5D:
+                self._offset += 1
+                return
+            if token != 0x2C:
+                raise _HarScanError("Invalid JSON array")
+            self._offset += 1
+
+    def _string_value(self) -> tuple[str | None, bool]:
+        self._skip_whitespace()
+        if self._peek() != 0x22:
+            self._skip_value()
+            return None, False
+        return self._read_string()
+
+    def _number_value(self) -> bool:
+        self._skip_whitespace()
+        token = self._peek()
+        if token != 0x2D and not 0x30 <= token <= 0x39:
+            self._skip_value()
+            return False
+        self._skip_number()
+        return True
+
+    def _array_value(self) -> bool:
+        self._skip_whitespace()
+        if self._peek() != 0x5B:
+            self._skip_value()
+            return False
+        self._skip_array(1)
+        return True
+
+    @staticmethod
+    def _har_version(value: str | None) -> bool:
+        if value is None:
+            return False
+        major, separator, minor = value.partition(".")
+        return (
+            separator == "."
+            and major == "1"
+            and minor.isascii()
+            and minor.isdigit()
+            and int(minor) >= 1
+        )
+
+    def _creator_object(self) -> bool:
+        self._skip_whitespace()
+        if self._peek() != 0x7B:
+            self._skip_value()
+            return False
+        self._offset += 1
+        self._skip_whitespace()
+        if self._peek() == 0x7D:
+            self._offset += 1
+            return False
+        has_name = False
+        has_version = False
+        while True:
+            key, _ = self._read_string()
+            self._expect(0x3A)
+            if key in {"name", "version"}:
+                _, nonempty = self._string_value()
+                if key == "name":
+                    has_name |= nonempty
+                else:
+                    has_version |= nonempty
+            else:
+                self._skip_value()
+            if self._end_object_member():
+                return has_name and has_version
+
+    def _request_object(self, shortcut: bool) -> bool:
+        self._skip_whitespace()
+        if self._peek() != 0x7B:
+            self._skip_value()
+            return False
+        self._offset += 1
+        self._skip_whitespace()
+        if self._peek() == 0x7D:
+            self._offset += 1
+            return False
+        method = False
+        url = False
+        http_version = False
+        headers = False
+        while True:
+            key, _ = self._read_string()
+            self._expect(0x3A)
+            if key in {"method", "url", "httpVersion"}:
+                _, nonempty = self._string_value()
+                if key == "method":
+                    method |= nonempty
+                elif key == "url":
+                    url |= nonempty
+                else:
+                    http_version |= nonempty
+            elif key == "headers":
+                headers |= self._array_value()
+            else:
+                self._skip_value()
+            if shortcut and method and url and http_version and headers:
+                return True
+            if self._end_object_member():
+                return method and url and http_version and headers
+
+    def _entry_object(self, shortcut: bool) -> bool:
+        self._skip_whitespace()
+        if self._peek() != 0x7B:
+            self._skip_value()
+            return False
+        self._offset += 1
+        self._skip_whitespace()
+        if self._peek() == 0x7D:
+            self._offset += 1
+            return False
+        started = False
+        elapsed = False
+        request = False
+        while True:
+            key, _ = self._read_string()
+            self._expect(0x3A)
+            if key == "startedDateTime":
+                _, nonempty = self._string_value()
+                started |= nonempty
+            elif key == "time":
+                elapsed |= self._number_value()
+            elif key == "request":
+                request |= self._request_object(shortcut and started and elapsed)
+            else:
+                self._skip_value()
+            if shortcut and started and elapsed and request:
+                return True
+            if self._end_object_member():
+                return started and elapsed and request
+
+    def _entries_array(self, shortcut: bool) -> bool:
+        self._skip_whitespace()
+        if self._peek() != 0x5B:
+            self._skip_value()
+            return False
+        self._offset += 1
+        self._skip_whitespace()
+        if self._peek() == 0x5D:
+            self._offset += 1
+            return True
+        first_entry = self._entry_object(shortcut)
+        if shortcut and first_entry:
+            return True
+        while True:
+            self._skip_whitespace()
+            token = self._peek()
+            if token == 0x5D:
+                self._offset += 1
+                return first_entry
+            if token != 0x2C:
+                raise _HarScanError("Invalid HAR entries array")
+            self._offset += 1
+            self._skip_value(1)
+
+    def _log_object(self) -> bool:
+        self._skip_whitespace()
+        if self._peek() != 0x7B:
+            self._skip_value()
+            return False
+        self._offset += 1
+        self._skip_whitespace()
+        if self._peek() == 0x7D:
+            self._offset += 1
+            return False
+        version = False
+        creator = False
+        entries = False
+        while True:
+            key, _ = self._read_string()
+            self._expect(0x3A)
+            if key == "version":
+                value, _ = self._string_value()
+                version |= self._har_version(value)
+            elif key == "creator":
+                creator |= self._creator_object()
+            elif key == "entries":
+                entries |= self._entries_array(version and creator)
+            else:
+                self._skip_value()
+            if version and creator and entries:
+                return True
+            if self._end_object_member():
+                return False
+
+    def _root_object(self) -> bool:
+        if self._peek() != 0x7B:
+            return False
+        self._offset += 1
+        self._skip_whitespace()
+        if self._peek() == 0x7D:
+            return False
+        while True:
+            key, _ = self._read_string()
+            self._expect(0x3A)
+            if key == "log" and self._log_object():
+                return True
+            if key != "log":
+                self._skip_value()
+            if self._end_object_member():
+                return False
 
 # ELF UPX entry stub patterns ported from NozomiNetworks/upx-recovery-tool
 # YARA rules, BSD-3-Clause: https://github.com/NozomiNetworks/upx-recovery-tool
@@ -279,6 +649,7 @@ class Type(IntFlag):
     PECOMPACT = auto()  # PECompact packed executable
     NSPACK = auto()  # NSPack packed executable
     MPRESS = auto()  # MPRESS packed executable
+    HAR = auto()  # HTTP Archive JSON
 
 
 COMMONTYPE = {
@@ -438,6 +809,7 @@ COMMONTYPE = {
     Type.PECOMPACT: "pecompact",
     Type.NSPACK: "nspack",
     Type.MPRESS: "mpress",
+    Type.HAR: "HTTP Archive (HAR)",
     Type.BPLS: "Binary Property List",
     Type.IURL: "Internet Shortcut",
     Type.DAA: "PowerISO DAA Disk Image",
@@ -571,6 +943,7 @@ FORMAT_IDS = {
     Type.PECOMPACT: "pecompact",
     Type.NSPACK: "nspack",
     Type.MPRESS: "mpress",
+    Type.HAR: "har",
 }
 
 FORMAT_ALIASES = {
@@ -2445,6 +2818,8 @@ class QuickID:
                     return
 
         def _structured_text_formats() -> None:
+            if _HarJsonScanner(data, _data_size()).matches():
+                obj._filetype |= Type.HAR
             text = _decoded_text_prefix(16384)
             if not text:
                 return

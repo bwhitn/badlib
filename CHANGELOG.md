@@ -14,3 +14,5 @@ All notable changes to this project will be documented in this file.
 - Added default and caller-configurable BADD output-size, block-count, and
   compression-ratio limits with layout validation before allocation.
 - Bounded RTF marker scanning to the first 256 KiB of input.
+- Added content-only HTTP Archive (HAR) identification with bounded JSON
+  structure scanning.

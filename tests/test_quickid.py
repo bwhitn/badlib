@@ -553,6 +553,14 @@ BYTE_FILETYPE_CASES = [
         b"--x\nContent-Type: text/html\nContent-Location: https://example.invalid/\n\n<html/>",
         Type.MHTML,
     ),
+    (
+        "HAR",
+        b'{"log":{"version":"1.2","creator":{"name":"Browser","version":"1"},'
+        b'"entries":[{"startedDateTime":"2026-08-28T12:00:00.000Z","time":1,'
+        b'"request":{"method":"GET","url":"https://example.invalid/",'
+        b'"httpVersion":"HTTP/2","headers":[]},"response":{}}]}}',
+        Type.HAR,
+    ),
     ("APPD", b"\x00\x05\x16\x07", Type.APPD),
     ("SQLITE", b"SQLite format 3\x00", Type.SQLITE),
     ("PHP", b"<?php echo 1;", Type.PHP),
@@ -1338,8 +1346,74 @@ def test_identify_upx_elf_relocated_init_scan_is_capped() -> None:
 def test_random_text_does_not_match_structured_text_formats() -> None:
     result = identify(b"this is some random text\nwith two lines\nand no structure\n")
 
-    specific = Type.CSV | Type.ICS | Type.MBOX | Type.RDP | Type.SCT | Type.MHTML
+    specific = (
+        Type.CSV
+        | Type.ICS
+        | Type.MBOX
+        | Type.RDP
+        | Type.SCT
+        | Type.MHTML
+        | Type.HAR
+    )
     assert not result & specific
+
+
+def test_har_detection_is_content_only(tmp_path: Path) -> None:
+    content = (
+        b'{"log":{"version":"1.2","creator":{"name":"Browser","version":"1"},'
+        b'"entries":[]}}'
+    )
+    json_path = tmp_path / "capture.json"
+    json_path.write_bytes(content)
+    misleading_path = tmp_path / "not-a-har.har"
+    misleading_path.write_bytes(b'{"log":"ordinary application data"}')
+
+    assert identify_path(json_path) & Type.HAR
+    assert not identify_path(misleading_path) & Type.HAR
+
+
+def test_har_detection_accepts_schema_keys_in_different_order() -> None:
+    result = identify(
+        b'{"log":{"entries":[{"request":{"headers":[],"httpVersion":"HTTP/1.1",'
+        b'"url":"https://example.invalid/","method":"GET"},"time":0,'
+        b'"startedDateTime":"2026-08-28T12:00:00Z"}],'
+        b'"creator":{"version":"1","name":"tool"},"version":"1.2"}}'
+    )
+
+    assert result & Type.HAR
+
+
+@pytest.mark.parametrize("version", [b"1.1", b"1.2", b"1.3", b"1.112"])
+def test_har_detection_accepts_compatible_versions_and_utf8_bom(
+    version: bytes,
+) -> None:
+    result = identify(
+        b"\xef\xbb\xbf  \n{\"log\":{\"version\":\""
+        + version
+        + b'\",\"creator\":{\"name\":\"tool\",\"version\":\"1\"},\"entries\":[]}}'
+    )
+
+    assert result & Type.HAR
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b'{"log":{"version":"1.2","creator":{"name":"tool","version":"1"}}}',
+        b'{"log":{"version":"2.0","creator":{"name":"tool","version":"1"},"entries":[]}}',
+        b'{"wrapper":{"log":{"version":"1.2","creator":{"name":"tool",'
+        b'"version":"1"},"entries":[]}}}',
+        b'{"log":{"version":"1.2","creator":{"name":"tool","version":"1"},'
+        b'"entries":[{"startedDateTime":"now","time":0,"request":{"method":'
+        b'"GET","url":"https://example.invalid/"}}]}}',
+        b'{"log":{"version":"1.2","creator":{"name":"tool","version":"1"},'
+        b'"entries":[{"startedDateTime":"now","time":0,"request":{"method":'
+        b'"GET","url":"https://example.invalid/","httpVersion":"HTTP/2",'
+        b'"headers":[}}]}}',
+    ],
+)
+def test_non_har_json_does_not_match_har(content: bytes) -> None:
+    assert not identify(content) & Type.HAR
 
 
 def test_arbitrary_protobuf_or_pickle_do_not_match_model_formats() -> None:
